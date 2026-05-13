@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.6";
+const APP_VERSION = "v0.3.7";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -208,6 +208,7 @@ function loadClassicScript(src, globalName) {
 }
 
 const AAC_SAMPLE_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+const MP4_FAST_CHUNK_SIZE = 4 * 1024 * 1024;
 
 function parseAacObjectType(codec) {
   const match = String(codec || "").match(/mp4a\.40\.(\d+)/i);
@@ -704,11 +705,14 @@ async function extractAudio() {
 }
 
 async function extractAudioFastMp4() {
-  setProgress(0.08, "本地快速提取音频轨道");
-  const MP4Box = await loadClassicScript("./vendor/mp4box/mp4box.all.min.js", "MP4Box");
+  setProgress(0.08, "加载本地音频解析模块");
+  const MP4Box = await withTimeout(
+    loadClassicScript("./vendor/mp4box/mp4box.all.min.js", "MP4Box"),
+    15000,
+    "本地音频解析模块加载超时，请刷新后重试"
+  );
   if (!MP4Box?.createFile) throw new Error("音频快速提取模块不可用");
 
-  const fileBuffer = await selectedFile.arrayBuffer();
   const mp4boxFile = MP4Box.createFile();
   const samples = [];
   let audioTrack = null;
@@ -716,9 +720,10 @@ async function extractAudioFastMp4() {
   await new Promise((resolve, reject) => {
     let settled = false;
     let idleTimer = null;
+    let readerFinished = false;
     const timeoutTimer = window.setTimeout(() => {
       finish(new Error("本地快速提取音频超时"));
-    }, 45000);
+    }, 90000);
 
     const finish = (error) => {
       if (settled) return;
@@ -740,26 +745,47 @@ async function extractAudioFastMp4() {
 
       mp4boxFile.setExtractionOptions(audioTrack.id, null, { nbSamples: 1000 });
       mp4boxFile.start();
+      setProgress(0.14, "找到音频轨道，开始本地拆分");
     };
 
     mp4boxFile.onSamples = (_id, _user, batch) => {
       samples.push(...batch);
-      setProgress(0.12, "本地快速提取音频轨道");
+      setProgress(readerFinished ? 0.22 : 0.18, "正在本地拆分音频轨道");
       window.clearTimeout(idleTimer);
-      idleTimer = window.setTimeout(() => finish(), 120);
+      if (readerFinished) {
+        idleTimer = window.setTimeout(() => finish(), 200);
+      }
     };
 
-    try {
-      fileBuffer.fileStart = 0;
-      mp4boxFile.appendBuffer(fileBuffer);
-      mp4boxFile.flush();
-      idleTimer = window.setTimeout(() => {
-        if (samples.length) finish();
-        else finish(new Error("没有提取到音频数据"));
-      }, 800);
-    } catch (error) {
-      finish(error);
-    }
+    (async () => {
+      try {
+        for (let offset = 0; offset < selectedFile.size && !settled; offset += MP4_FAST_CHUNK_SIZE) {
+          const end = Math.min(offset + MP4_FAST_CHUNK_SIZE, selectedFile.size);
+          const readRatio = selectedFile.size ? end / selectedFile.size : 1;
+          const readStatus = audioTrack ? "分块拆分音频轨道" : "分块查找音频轨道";
+          setProgress(Math.min(0.18, 0.08 + readRatio * 0.1), readStatus);
+
+          const buffer = await withTimeout(
+            selectedFile.slice(offset, end).arrayBuffer(),
+            20000,
+            "读取视频文件超时，请重新选择视频后再试"
+          );
+          buffer.fileStart = offset;
+          mp4boxFile.appendBuffer(buffer);
+
+          await new Promise((resume) => window.setTimeout(resume, 0));
+        }
+
+        readerFinished = true;
+        mp4boxFile.flush();
+        idleTimer = window.setTimeout(() => {
+          if (samples.length) finish();
+          else finish(new Error("没有提取到音频数据"));
+        }, 1200);
+      } catch (error) {
+        finish(error);
+      }
+    })();
   });
 
   if (!samples.length || !audioTrack) {
