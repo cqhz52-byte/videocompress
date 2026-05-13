@@ -87,6 +87,13 @@ h2 {
   letter-spacing: 0;
 }
 
+.version-line {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .privacy-pill {
   display: inline-flex;
   align-items: center;
@@ -591,6 +598,38 @@ output {
   background: #fff0f0;
   color: var(--warn);
   font-weight: 700;
+}
+
+.update-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 20;
+  width: min(420px, calc(100% - 28px));
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transform: translateX(-50%);
+  padding: 10px 12px 10px 16px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 16px 36px rgba(21, 32, 46, 0.28);
+  font-weight: 850;
+}
+
+.update-toast button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
 .is-hidden {
