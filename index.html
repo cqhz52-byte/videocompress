@@ -192,28 +192,31 @@
                   <span>DeepSeek Key</span>
                   <input id="deepseekKey" type="password" autocomplete="off" placeholder="sk-..." />
                 </label>
-                <label>
-                  <span>OSS AccessKey ID</span>
-                  <input id="ossAccessKeyId" type="password" autocomplete="off" />
-                </label>
-                <label>
-                  <span>OSS AccessKey Secret</span>
-                  <input id="ossAccessKeySecret" type="password" autocomplete="off" />
-                </label>
-                <div class="split-fields">
+                <details class="advanced-settings">
+                  <summary>阿里 OSS 高级设置</summary>
                   <label>
-                    <span>OSS Region</span>
-                    <input id="ossRegion" type="text" value="oss-cn-hangzhou" autocomplete="off" />
+                    <span>OSS AccessKey ID</span>
+                    <input id="ossAccessKeyId" type="password" autocomplete="off" />
                   </label>
                   <label>
-                    <span>OSS Bucket</span>
-                    <input id="ossBucket" type="text" autocomplete="off" />
+                    <span>OSS AccessKey Secret</span>
+                    <input id="ossAccessKeySecret" type="password" autocomplete="off" />
                   </label>
-                </div>
-                <label>
-                  <span>OSS Prefix</span>
-                  <input id="ossPrefix" type="text" value="videocompress/audio" autocomplete="off" />
-                </label>
+                  <div class="split-fields">
+                    <label>
+                      <span>OSS Region</span>
+                      <input id="ossRegion" type="text" value="oss-cn-hangzhou" autocomplete="off" />
+                    </label>
+                    <label>
+                      <span>OSS Bucket</span>
+                      <input id="ossBucket" type="text" autocomplete="off" />
+                    </label>
+                  </div>
+                  <label>
+                    <span>OSS Prefix</span>
+                    <input id="ossPrefix" type="text" value="videocompress/audio" autocomplete="off" />
+                  </label>
+                </details>
                 <label class="switch setting-switch">
                   <input id="saveApiSettings" type="checkbox" checked />
                   <span>保存在本机浏览器</span>
