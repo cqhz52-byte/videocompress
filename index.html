@@ -178,6 +178,49 @@
               </div>
             </div>
 
+            <details class="api-settings" open>
+              <summary>
+                <i data-lucide="key-round" aria-hidden="true"></i>
+                <span>API 设置</span>
+              </summary>
+              <div class="field-stack">
+                <label>
+                  <span>阿里百炼 Key</span>
+                  <input id="dashscopeKey" type="password" autocomplete="off" placeholder="sk-..." />
+                </label>
+                <label>
+                  <span>DeepSeek Key</span>
+                  <input id="deepseekKey" type="password" autocomplete="off" placeholder="sk-..." />
+                </label>
+                <label>
+                  <span>OSS AccessKey ID</span>
+                  <input id="ossAccessKeyId" type="password" autocomplete="off" />
+                </label>
+                <label>
+                  <span>OSS AccessKey Secret</span>
+                  <input id="ossAccessKeySecret" type="password" autocomplete="off" />
+                </label>
+                <div class="split-fields">
+                  <label>
+                    <span>OSS Region</span>
+                    <input id="ossRegion" type="text" value="oss-cn-hangzhou" autocomplete="off" />
+                  </label>
+                  <label>
+                    <span>OSS Bucket</span>
+                    <input id="ossBucket" type="text" autocomplete="off" />
+                  </label>
+                </div>
+                <label>
+                  <span>OSS Prefix</span>
+                  <input id="ossPrefix" type="text" value="videocompress/audio" autocomplete="off" />
+                </label>
+                <label class="switch setting-switch">
+                  <input id="saveApiSettings" type="checkbox" checked />
+                  <span>保存在本机浏览器</span>
+                </label>
+              </div>
+            </details>
+
             <button id="subtitleBtn" class="primary-button" type="button" disabled>
               <i data-lucide="sparkles" aria-hidden="true"></i>
               <span>生成中文字幕</span>
