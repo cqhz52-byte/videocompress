@@ -18,7 +18,7 @@
           <div>
             <p class="eyebrow">Mobile Video Studio</p>
             <h1>视频压缩与字幕翻译</h1>
-            <p class="version-line">版本 v0.3.8</p>
+            <p class="version-line">版本 v0.3.9</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -190,6 +190,47 @@
 
             <details class="api-settings">
               <summary>
+                <i data-lucide="palette" aria-hidden="true"></i>
+                <span>字幕样式</span>
+              </summary>
+              <div class="field-stack">
+                <label>
+                  <span>字体大小</span>
+                  <div class="range-wrap">
+                    <input id="subtitleFontSize" type="range" min="70" max="150" value="100" />
+                    <output id="subtitleFontSizeLabel" for="subtitleFontSize">100%</output>
+                  </div>
+                </label>
+                <label>
+                  <span>字幕位置</span>
+                  <select id="subtitlePosition">
+                    <option value="bottom" selected>底部</option>
+                    <option value="middle">中间</option>
+                    <option value="top">顶部</option>
+                  </select>
+                </label>
+                <div class="split-fields">
+                  <label>
+                    <span>文字颜色</span>
+                    <input id="subtitleColor" type="color" value="#ffffff" />
+                  </label>
+                  <label>
+                    <span>背景颜色</span>
+                    <input id="subtitleBg" type="color" value="#000000" />
+                  </label>
+                </div>
+                <label>
+                  <span>背景透明度</span>
+                  <div class="range-wrap">
+                    <input id="subtitleBgOpacity" type="range" min="0" max="85" value="58" />
+                    <output id="subtitleBgOpacityLabel" for="subtitleBgOpacity">58%</output>
+                  </div>
+                </label>
+              </div>
+            </details>
+
+            <details class="api-settings">
+              <summary>
                 <i data-lucide="key-round" aria-hidden="true"></i>
                 <span>翻译设置</span>
               </summary>
@@ -220,6 +261,7 @@
           <div class="progress-track">
             <div id="progressBar" class="progress-bar"></div>
           </div>
+          <ol id="taskSteps" class="task-steps is-hidden" aria-label="字幕生成步骤"></ol>
         </section>
 
         <section id="resultPanel" class="result-panel is-hidden" aria-label="压缩结果">
@@ -290,12 +332,17 @@
               <h2>中文字幕视频已生成</h2>
             </div>
             <div class="result-actions">
+              <button id="shareBurnedVideo" class="download-button secondary" type="button" disabled>
+                <i data-lucide="share-2" aria-hidden="true"></i>
+                <span>分享视频</span>
+              </button>
               <a id="downloadBurnedVideo" class="download-button" href="#" download>
                 <i data-lucide="download" aria-hidden="true"></i>
                 <span>下载字幕视频</span>
               </a>
             </div>
           </div>
+          <p id="burnMeta" class="result-note"></p>
           <video id="burnedVideoPreview" class="preview burned-preview" controls playsinline></video>
         </section>
 

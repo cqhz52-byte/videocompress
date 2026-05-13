@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.8";
+const APP_VERSION = "v0.3.9";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -41,12 +41,20 @@ const els = {
   targetLang: document.querySelector("#targetLang"),
   ocrInterval: document.querySelector("#ocrInterval"),
   ocrCrop: document.querySelector("#ocrCrop"),
+  subtitleFontSize: document.querySelector("#subtitleFontSize"),
+  subtitleFontSizeLabel: document.querySelector("#subtitleFontSizeLabel"),
+  subtitlePosition: document.querySelector("#subtitlePosition"),
+  subtitleColor: document.querySelector("#subtitleColor"),
+  subtitleBg: document.querySelector("#subtitleBg"),
+  subtitleBgOpacity: document.querySelector("#subtitleBgOpacity"),
+  subtitleBgOpacityLabel: document.querySelector("#subtitleBgOpacityLabel"),
   deepseekKey: document.querySelector("#deepseekKey"),
   saveApiSettings: document.querySelector("#saveApiSettings"),
   progressPanel: document.querySelector("#progressPanel"),
   statusText: document.querySelector("#statusText"),
   progressText: document.querySelector("#progressText"),
   progressBar: document.querySelector("#progressBar"),
+  taskSteps: document.querySelector("#taskSteps"),
   resultPanel: document.querySelector("#resultPanel"),
   beforeSize: document.querySelector("#beforeSize"),
   afterSize: document.querySelector("#afterSize"),
@@ -61,7 +69,9 @@ const els = {
   downloadAudio: document.querySelector("#downloadAudio"),
   burnResult: document.querySelector("#burnResult"),
   burnedVideoPreview: document.querySelector("#burnedVideoPreview"),
+  burnMeta: document.querySelector("#burnMeta"),
   downloadBurnedVideo: document.querySelector("#downloadBurnedVideo"),
+  shareBurnedVideo: document.querySelector("#shareBurnedVideo"),
   errorBox: document.querySelector("#errorBox"),
   updateToast: document.querySelector("#updateToast"),
   updateText: document.querySelector("#updateText"),
@@ -80,6 +90,10 @@ let ffmpeg = null;
 let ffmpegReady = false;
 let speechPipeline = null;
 let speechModelLoading = null;
+let screenWakeLock = null;
+let shouldKeepScreenAwake = false;
+let taskStepState = [];
+let burnedVideoFile = null;
 
 window.lucide?.createIcons();
 
@@ -190,6 +204,11 @@ function cleanAacName(name) {
 function cleanBurnedVideoName(name) {
   const base = name.replace(/\.[^.]+$/, "");
   return `${base || "video"}-zh-subtitles.webm`;
+}
+
+function burnedVideoFormatNote(hasAudio) {
+  const audioText = hasAudio ? "已保留原视频声音" : "未能保留原视频声音";
+  return `${audioText}。浏览器本机压制当前导出 WebM；如需 MP4，需要额外转码。`;
 }
 
 function isMp4LikeFile(file) {
@@ -319,6 +338,127 @@ function setProgress(ratio, status) {
   els.progressBar.style.width = `${percent}%`;
 }
 
+function progressDetail(ratio, status) {
+  const safeRatio = Math.max(0, Math.min(1, ratio || 0));
+  return `${Math.round(safeRatio * 100)}% · ${status}`;
+}
+
+function setTaskSteps(steps) {
+  taskStepState = steps.map((step) => ({
+    id: step.id,
+    label: step.label,
+    status: step.status || "pending",
+    detail: step.detail || "",
+  }));
+  renderTaskSteps();
+}
+
+function updateTaskStep(id, status, detail = "") {
+  const step = taskStepState.find((item) => item.id === id);
+  if (!step) return;
+  step.status = status;
+  step.detail = detail;
+  renderTaskSteps();
+}
+
+function clearTaskSteps() {
+  taskStepState = [];
+  renderTaskSteps();
+}
+
+function renderTaskSteps() {
+  if (!els.taskSteps) return;
+  els.taskSteps.replaceChildren();
+  els.taskSteps.classList.toggle("is-hidden", taskStepState.length === 0);
+
+  taskStepState.forEach((step) => {
+    const item = document.createElement("li");
+    item.className = `task-step is-${step.status}`;
+
+    const dot = document.createElement("span");
+    dot.className = "task-dot";
+    dot.setAttribute("aria-hidden", "true");
+
+    const textWrap = document.createElement("span");
+    textWrap.className = "task-copy";
+
+    const label = document.createElement("strong");
+    label.textContent = step.label;
+    textWrap.appendChild(label);
+
+    if (step.detail) {
+      const detail = document.createElement("small");
+      detail.textContent = step.detail;
+      textWrap.appendChild(detail);
+    }
+
+    item.append(dot, textWrap);
+    els.taskSteps.appendChild(item);
+  });
+}
+
+function subtitleTaskSteps() {
+  return [
+    { id: "awake", label: "保持屏幕常亮" },
+    { id: "audio", label: "本机提取音频" },
+    { id: "speech", label: "本机语音转文字" },
+    { id: "translate", label: "AI 翻译润色" },
+    { id: "srt", label: "生成字幕文件" },
+    { id: "burn", label: "本机压制字幕视频" },
+  ];
+}
+
+function ocrTaskSteps() {
+  return [
+    { id: "awake", label: "保持屏幕常亮" },
+    { id: "ocr", label: "识别画面字幕" },
+    { id: "translate", label: "AI 翻译润色" },
+    { id: "srt", label: "生成字幕文件" },
+  ];
+}
+
+async function requestScreenWakeLock() {
+  if (!shouldKeepScreenAwake || screenWakeLock || !("wakeLock" in navigator)) return;
+
+  try {
+    screenWakeLock = await navigator.wakeLock.request("screen");
+    screenWakeLock.addEventListener("release", () => {
+      screenWakeLock = null;
+      if (shouldKeepScreenAwake) {
+        updateTaskStep("awake", "warning", "屏幕常亮被系统释放，请保持页面在前台");
+      }
+    });
+    updateTaskStep("awake", "active", "屏幕常亮已开启");
+  } catch (error) {
+    console.warn("Screen wake lock unavailable", error);
+    updateTaskStep("awake", "warning", "当前浏览器未开启常亮，请手动保持屏幕点亮");
+  }
+}
+
+async function acquireScreenWakeLock() {
+  shouldKeepScreenAwake = true;
+  if (!("wakeLock" in navigator)) {
+    updateTaskStep("awake", "warning", "当前浏览器不支持常亮，请手动保持屏幕点亮");
+    return;
+  }
+  await requestScreenWakeLock();
+}
+
+async function releaseScreenWakeLock() {
+  shouldKeepScreenAwake = false;
+  if (!screenWakeLock) return;
+
+  const lock = screenWakeLock;
+  screenWakeLock = null;
+  await lock.release().catch(() => {});
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && shouldKeepScreenAwake) {
+    requestScreenWakeLock();
+  }
+});
+
 function withTimeout(promise, ms, message) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -411,6 +551,7 @@ function resetSubtitleResult() {
   bilingualSrtUrl = null;
   audioUrl = null;
   burnedVideoUrl = null;
+  burnedVideoFile = null;
   els.subtitleResult.classList.add("is-hidden");
   els.subtitlePreview.value = "";
   els.downloadZhSrt.removeAttribute("href");
@@ -420,7 +561,10 @@ function resetSubtitleResult() {
   els.downloadAudio?.removeAttribute("href");
   els.burnResult?.classList.add("is-hidden");
   els.burnedVideoPreview?.removeAttribute("src");
+  if (els.burnMeta) els.burnMeta.textContent = "";
   els.downloadBurnedVideo?.removeAttribute("href");
+  if (els.shareBurnedVideo) els.shareBurnedVideo.disabled = true;
+  clearTaskSteps();
 }
 
 function setPreset(value) {
@@ -443,6 +587,25 @@ function updateQualityLabel() {
   } else {
     els.qualityLabel.value = "更小";
   }
+}
+
+function updateSubtitleStyleLabels() {
+  if (els.subtitleFontSizeLabel) {
+    els.subtitleFontSizeLabel.value = `${els.subtitleFontSize.value}%`;
+  }
+  if (els.subtitleBgOpacityLabel) {
+    els.subtitleBgOpacityLabel.value = `${els.subtitleBgOpacity.value}%`;
+  }
+}
+
+function subtitleStyleSettings() {
+  return {
+    fontScale: Number(els.subtitleFontSize?.value || 100) / 100,
+    position: els.subtitlePosition?.value || "bottom",
+    color: els.subtitleColor?.value || "#ffffff",
+    background: els.subtitleBg?.value || "#000000",
+    backgroundOpacity: Number(els.subtitleBgOpacity?.value || 58) / 100,
+  };
 }
 
 function currentSubtitleMode() {
@@ -855,6 +1018,7 @@ async function extractAudioNative() {
 
   let audioContext = null;
   let recorder = null;
+  let hasAudioTrack = false;
 
   try {
     await waitForVideoEvent(video, "loadedmetadata");
@@ -1041,7 +1205,9 @@ async function translateSegmentsInBrowser(segments, apiKey) {
 
   for (let i = 0; i < normalized.length; i += batchSize) {
     const batch = normalized.slice(i, i + batchSize);
-    setProgress(0.52 + Math.min(0.24, (i / Math.max(1, normalized.length)) * 0.24), "AI 翻译中文字幕");
+    const ratio = 0.52 + Math.min(0.24, (i / Math.max(1, normalized.length)) * 0.24);
+    setProgress(ratio, "AI 翻译中文字幕");
+    updateTaskStep("translate", "active", progressDetail(ratio, `第 ${Math.floor(i / batchSize) + 1} 批`));
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -1074,6 +1240,7 @@ async function translateSegmentsInBrowser(segments, apiKey) {
     );
   }
 
+  updateTaskStep("translate", "done", `已翻译 ${translated.length} 条字幕`);
   return translated;
 }
 
@@ -1083,6 +1250,7 @@ async function loadSpeechPipeline() {
 
   speechModelLoading = (async () => {
     setProgress(0.25, "加载本地语音模型");
+    updateTaskStep("speech", "active", "加载本地 Whisper 模型");
     const transformers = await withTimeout(
       import(TRANSFORMERS_JS_URL),
       120000,
@@ -1094,7 +1262,9 @@ async function loadSpeechPipeline() {
       dtype: "q8",
       progress_callback: (item) => {
         if (item.status === "progress" && Number.isFinite(item.progress)) {
-          setProgress(0.25 + Math.min(0.12, item.progress / 100 * 0.12), "下载本地语音模型");
+          const ratio = 0.25 + Math.min(0.12, item.progress / 100 * 0.12);
+          setProgress(ratio, "下载本地语音模型");
+          updateTaskStep("speech", "active", progressDetail(ratio, "下载模型"));
         }
       },
     });
@@ -1174,6 +1344,7 @@ function normalizeSpeechSegments(result) {
 async function transcribeAudioLocally(audioFile) {
   const transcriber = await loadSpeechPipeline();
   setProgress(0.38, "本机语音转文字");
+  updateTaskStep("speech", "active", "正在识别语音内容");
   const audio = await decodeAudioToMono(audioFile);
   const result = await transcriber(audio, {
     chunk_length_s: 30,
@@ -1184,6 +1355,7 @@ async function transcribeAudioLocally(audioFile) {
   });
   const segments = normalizeSpeechSegments(result);
   if (!segments.length) throw new Error("本机语音模型没有识别到文字。请确认视频有人声，或换更清晰的音频。");
+  updateTaskStep("speech", "done", `已识别 ${segments.length} 条字幕`);
   return segments;
 }
 
@@ -1216,7 +1388,8 @@ function drawSubtitleFrame(ctx, video, segments, width, height) {
   const text = subtitleTextForTime(segments, video.currentTime);
   if (!text) return;
 
-  const fontSize = Math.max(22, Math.round(width * 0.045));
+  const style = subtitleStyleSettings();
+  const fontSize = Math.max(18, Math.round(width * 0.045 * style.fontScale));
   const lineHeight = Math.round(fontSize * 1.35);
   ctx.font = `700 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif`;
   ctx.textAlign = "center";
@@ -1225,13 +1398,19 @@ function drawSubtitleFrame(ctx, video, segments, width, height) {
   const maxTextWidth = width * 0.86;
   const lines = wrapSubtitleText(ctx, text, maxTextWidth);
   const boxHeight = lines.length * lineHeight + Math.round(fontSize * 0.9);
-  const boxY = height - boxHeight - Math.round(height * 0.08);
+  const marginY = Math.round(height * 0.08);
+  const boxYMap = {
+    top: marginY,
+    middle: Math.round((height - boxHeight) / 2),
+    bottom: height - boxHeight - marginY,
+  };
+  const boxY = boxYMap[style.position] ?? boxYMap.bottom;
 
-  ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
+  ctx.fillStyle = hexToRgba(style.background, style.backgroundOpacity);
   ctx.fillRect(Math.round(width * 0.06), boxY, Math.round(width * 0.88), boxHeight);
   ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
   ctx.lineWidth = Math.max(3, Math.round(fontSize * 0.12));
-  ctx.fillStyle = "#fff";
+  ctx.fillStyle = style.color;
 
   const firstY = boxY + boxHeight / 2 - ((lines.length - 1) * lineHeight) / 2;
   lines.forEach((line, index) => {
@@ -1241,12 +1420,24 @@ function drawSubtitleFrame(ctx, video, segments, width, height) {
   });
 }
 
+function hexToRgba(hex, opacity) {
+  const normalized = String(hex || "#000000").replace("#", "");
+  const value = normalized.length === 3
+    ? normalized.split("").map((char) => char + char).join("")
+    : normalized.padEnd(6, "0").slice(0, 6);
+  const r = parseInt(value.slice(0, 2), 16) || 0;
+  const g = parseInt(value.slice(2, 4), 16) || 0;
+  const b = parseInt(value.slice(4, 6), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, opacity))})`;
+}
+
 async function burnSubtitlesToVideo(segments) {
   if (!canUseNativeCompressor()) {
     throw new Error("当前浏览器不支持本机字幕压制。请换 Chrome/Edge 或先下载 SRT。");
   }
 
   setProgress(0.78, "准备本机压制字幕");
+  updateTaskStep("burn", "active", "准备画面和音轨");
   const video = document.createElement("video");
   video.src = sourceUrl || URL.createObjectURL(selectedFile);
   video.muted = true;
@@ -1279,13 +1470,18 @@ async function burnSubtitlesToVideo(segments) {
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       audioContext = new AudioContextClass();
+      await audioContext.resume();
       const source = audioContext.createMediaElementSource(video);
       const destination = audioContext.createMediaStreamDestination();
       source.connect(destination);
-      tracks.push(...destination.stream.getAudioTracks());
+      source.connect(audioContext.destination);
+      const audioTracks = destination.stream.getAudioTracks();
+      tracks.push(...audioTracks);
+      hasAudioTrack = audioTracks.length > 0;
     } catch (error) {
       console.warn("Subtitle burn audio track unavailable", error);
     }
+    updateTaskStep("burn", hasAudioTrack ? "active" : "warning", hasAudioTrack ? "原声音轨已接入" : "未能接入原声音轨");
 
     const mimeType = pickNativeMimeType();
     recorder = new MediaRecorder(new MediaStream(tracks), {
@@ -1307,7 +1503,9 @@ async function burnSubtitlesToVideo(segments) {
       if (!drawing) return;
       drawSubtitleFrame(ctx, video, segments, width, height);
       const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-      setProgress(0.78 + Math.min(0.2, (video.currentTime / duration) * 0.2), "本机压制中文字幕");
+      const ratio = 0.78 + Math.min(0.2, (video.currentTime / duration) * 0.2);
+      setProgress(ratio, "本机压制中文字幕");
+      updateTaskStep("burn", "active", progressDetail(ratio, `${Math.round(video.currentTime)} / ${Math.round(duration)} 秒`));
       requestAnimationFrame(draw);
     };
 
@@ -1323,11 +1521,19 @@ async function burnSubtitlesToVideo(segments) {
     const blob = new Blob(chunks, { type: mimeType || "video/webm" });
     if (!blob.size) throw new Error("字幕视频生成失败。");
     revokeUrl(burnedVideoUrl);
+    burnedVideoFile = new File([blob], cleanBurnedVideoName(selectedFile.name), { type: blob.type || "video/webm" });
     burnedVideoUrl = URL.createObjectURL(blob);
     els.burnedVideoPreview.src = burnedVideoUrl;
     els.downloadBurnedVideo.href = burnedVideoUrl;
-    els.downloadBurnedVideo.download = cleanBurnedVideoName(selectedFile.name);
+    els.downloadBurnedVideo.download = burnedVideoFile.name;
+    if (els.shareBurnedVideo) {
+      const canShareFile = Boolean(navigator.canShare?.({ files: [burnedVideoFile] }));
+      els.shareBurnedVideo.disabled = !canShareFile;
+      els.shareBurnedVideo.title = canShareFile ? "调用手机系统分享" : "当前浏览器不支持直接分享文件，请先下载再分享";
+    }
+    if (els.burnMeta) els.burnMeta.textContent = burnedVideoFormatNote(hasAudioTrack);
     els.burnResult.classList.remove("is-hidden");
+    updateTaskStep("burn", hasAudioTrack ? "done" : "warning", `${formatSize(blob.size)} · ${hasAudioTrack ? "原声已保留" : "原声未保留"}`);
   } finally {
     if (recorder?.state === "recording") recorder.stop();
     await audioContext?.close().catch(() => {});
@@ -1337,14 +1543,22 @@ async function burnSubtitlesToVideo(segments) {
 
 async function generateSpeechSubtitles() {
   validateTranslateSettings(collectApiSettings());
+  setTaskSteps(subtitleTaskSteps());
+  updateTaskStep("awake", "active", "尝试保持手机屏幕常亮");
+  await acquireScreenWakeLock();
   setProgress(0, "准备本地提取音频");
+  updateTaskStep("audio", "active", "正在读取视频音轨");
   const audioFile = await extractAudio();
   showAudioExtractionResult(audioFile);
+  updateTaskStep("audio", "done", `音频 ${formatSize(audioFile.size)}`);
   const sourceSegments = await transcribeAudioLocally(audioFile);
+  updateTaskStep("translate", "active", "准备发送文字给 AI");
   const translated = await translateSegments(sourceSegments);
   showSubtitleResult(translated);
+  updateTaskStep("srt", "done", `已生成 ${normalizeSegments(translated).length} 条字幕`);
   await burnSubtitlesToVideo(normalizeSegments(translated));
   setProgress(1, "字幕视频完成");
+  updateTaskStep("awake", "done", "任务完成后会关闭常亮");
 }
 
 function waitForVideoSeek(video, time) {
@@ -1401,6 +1615,11 @@ async function loadTesseract() {
 }
 
 async function generateOcrSubtitles() {
+  validateTranslateSettings(collectApiSettings());
+  setTaskSteps(ocrTaskSteps());
+  updateTaskStep("awake", "active", "尝试保持手机屏幕常亮");
+  await acquireScreenWakeLock();
+  updateTaskStep("ocr", "active", "准备截帧识别");
   const Tesseract = await loadTesseract();
   const video = document.createElement("video");
   video.src = sourceUrl;
@@ -1422,7 +1641,9 @@ async function generateOcrSubtitles() {
   const lang = langMap[els.sourceLang.value] || "eng";
 
   for (let time = 0; time < duration; time += interval) {
-    setProgress(duration ? time / duration : 0.1, "识别画面字幕");
+    const ratio = duration ? time / duration : 0.1;
+    setProgress(ratio, "识别画面字幕");
+    updateTaskStep("ocr", "active", progressDetail(ratio, `${Math.round(time)} / ${Math.round(duration)} 秒`));
     await waitForVideoSeek(video, time);
 
     const sourceHeight = video.videoHeight * cropRatio;
@@ -1441,10 +1662,14 @@ async function generateOcrSubtitles() {
     throw new Error("没有识别到画面字幕。可以调大字幕区域或缩短截帧间隔再试。");
   }
 
+  updateTaskStep("ocr", "done", `已识别 ${sourceSegments.length} 条画面字幕`);
   setProgress(0.86, "翻译画面字幕");
+  updateTaskStep("translate", "active", "准备发送文字给 AI");
   const translated = await translateSegments(sourceSegments);
   showSubtitleResult(translated);
+  updateTaskStep("srt", "done", `已生成 ${normalizeSegments(translated).length} 条字幕`);
   setProgress(1, "字幕完成");
+  updateTaskStep("awake", "done", "任务完成后会关闭常亮");
 }
 
 async function generateSubtitles() {
@@ -1464,7 +1689,33 @@ async function generateSubtitles() {
     showError(error.message || "字幕生成失败。");
     setProgress(0, "失败");
   } finally {
+    await releaseScreenWakeLock();
     setSubtitleBusy(false);
+  }
+}
+
+async function shareBurnedVideo() {
+  if (!burnedVideoFile) {
+    showError("请先生成字幕视频。");
+    return;
+  }
+
+  if (!navigator.share || !navigator.canShare?.({ files: [burnedVideoFile] })) {
+    showError("当前浏览器不支持直接分享视频文件，请先下载后再转发。");
+    return;
+  }
+
+  clearError();
+  try {
+    await navigator.share({
+      files: [burnedVideoFile],
+      title: "中文字幕视频",
+      text: "已生成中文字幕视频",
+    });
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      showError(error.message || "分享失败，请先下载后再转发。");
+    }
   }
 }
 
@@ -1477,7 +1728,10 @@ els.fileInput.addEventListener("change", (event) => setSelectedFile(event.target
 els.clearFile.addEventListener("click", clearFile);
 els.compressBtn.addEventListener("click", compressVideo);
 els.subtitleBtn.addEventListener("click", generateSubtitles);
+els.shareBurnedVideo?.addEventListener("click", shareBurnedVideo);
 els.quality.addEventListener("input", updateQualityLabel);
+els.subtitleFontSize?.addEventListener("input", updateSubtitleStyleLabels);
+els.subtitleBgOpacity?.addEventListener("input", updateSubtitleStyleLabels);
 
 document.querySelectorAll('input[name="preset"]').forEach((input) => {
   input.addEventListener("change", () => setPreset(input.value));
@@ -1511,3 +1765,4 @@ els.dropZone.addEventListener("drop", (event) => {
 });
 
 setPreset("small");
+updateSubtitleStyleLabels();

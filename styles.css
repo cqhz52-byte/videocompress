@@ -9,6 +9,7 @@
   --accent-strong: #08634f;
   --accent-soft: #dff4ee;
   --warn: #b34141;
+  --ok: #16885f;
   --shadow: 0 18px 50px rgba(31, 45, 61, 0.12);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -232,6 +233,14 @@ button svg,
   margin-top: 14px;
   border-radius: 8px;
   background: #111820;
+}
+
+.drop-panel .preview,
+.burned-preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
 }
 
 .controls {
@@ -483,6 +492,69 @@ output {
   margin-top: 16px;
 }
 
+.result-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.task-steps {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-step {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.task-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 999px;
+  border: 2px solid #cbd5e1;
+  background: #fff;
+}
+
+.task-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.task-copy strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.task-copy small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-step.is-active .task-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.task-step.is-done .task-dot {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.task-step.is-warning .task-dot {
+  border-color: #e09b2d;
+  background: #e09b2d;
+}
+
 .ocr-options {
   margin-bottom: 18px;
   padding-top: 2px;
@@ -539,6 +611,11 @@ output {
   border-radius: 8px;
   background: #fff;
   color: var(--ink);
+}
+
+.field-stack input[type="color"] {
+  height: 44px;
+  padding: 4px;
 }
 
 .split-fields {
@@ -598,6 +675,12 @@ output {
   color: #fff;
   font-weight: 850;
   text-decoration: none;
+}
+
+.download-button:disabled {
+  cursor: not-allowed;
+  background: #aab7c4;
+  color: #fff;
 }
 
 .error-box {
