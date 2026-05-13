@@ -18,7 +18,7 @@
           <div>
             <p class="eyebrow">Mobile Video Studio</p>
             <h1>视频压缩与字幕翻译</h1>
-            <p class="version-line">版本 v0.3.3</p>
+            <p class="version-line">版本 v0.3.4</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -110,6 +110,15 @@
                 <input id="stripAudio" type="checkbox" />
                 <span>去除声音</span>
               </label>
+            </div>
+
+            <div class="control-row">
+              <label for="compressMode">压缩模式</label>
+              <select id="compressMode">
+                <option value="auto" selected>自动</option>
+                <option value="native">安卓兼容</option>
+                <option value="ffmpeg">高清 MP4</option>
+              </select>
             </div>
 
             <button id="compressBtn" class="primary-button" type="button" disabled>
