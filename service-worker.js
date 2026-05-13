@@ -1,4 +1,4 @@
-const CACHE_NAME = "video-compressor-v2";
+const CACHE_NAME = "video-compressor-v3";
 
 const APP_SHELL = [
   "./",
