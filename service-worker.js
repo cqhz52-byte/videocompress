@@ -8,11 +8,15 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "https://unpkg.com/lucide@latest/dist/umd/lucide.min.js",
-  "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js",
-  "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/worker.js",
-  "https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js",
-  "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.js",
-  "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.wasm",
+  "./vendor/ffmpeg/index.js",
+  "./vendor/ffmpeg/classes.js",
+  "./vendor/ffmpeg/const.js",
+  "./vendor/ffmpeg/errors.js",
+  "./vendor/ffmpeg/utils.js",
+  "./vendor/ffmpeg/types.js",
+  "./vendor/ffmpeg/worker.js",
+  "./vendor/ffmpeg/ffmpeg-core.js",
+  "./vendor/ffmpeg/ffmpeg-core.wasm",
   "https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"
 ];
 
