@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.9";
+const APP_VERSION = "v0.3.10";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -64,6 +64,8 @@ const els = {
   subtitlePreview: document.querySelector("#subtitlePreview"),
   downloadZhSrt: document.querySelector("#downloadZhSrt"),
   downloadBilingualSrt: document.querySelector("#downloadBilingualSrt"),
+  applySubtitleEdits: document.querySelector("#applySubtitleEdits"),
+  reburnSubtitles: document.querySelector("#reburnSubtitles"),
   audioResult: document.querySelector("#audioResult"),
   audioPreview: document.querySelector("#audioPreview"),
   downloadAudio: document.querySelector("#downloadAudio"),
@@ -94,6 +96,7 @@ let screenWakeLock = null;
 let shouldKeepScreenAwake = false;
 let taskStepState = [];
 let burnedVideoFile = null;
+let currentSubtitleSegments = [];
 
 window.lucide?.createIcons();
 
@@ -552,10 +555,13 @@ function resetSubtitleResult() {
   audioUrl = null;
   burnedVideoUrl = null;
   burnedVideoFile = null;
+  currentSubtitleSegments = [];
   els.subtitleResult.classList.add("is-hidden");
   els.subtitlePreview.value = "";
   els.downloadZhSrt.removeAttribute("href");
   els.downloadBilingualSrt.removeAttribute("href");
+  if (els.applySubtitleEdits) els.applySubtitleEdits.disabled = true;
+  if (els.reburnSubtitles) els.reburnSubtitles.disabled = true;
   els.audioResult?.classList.add("is-hidden");
   els.audioPreview?.removeAttribute("src");
   els.downloadAudio?.removeAttribute("href");
@@ -1106,6 +1112,46 @@ function buildSrt(segments, mode) {
     .join("\n\n");
 }
 
+function parseSrtTime(value) {
+  const match = String(value || "").trim().match(/^(\d{2}):(\d{2}):(\d{2}),(\d{1,3})$/);
+  if (!match) throw new Error(`时间格式错误：${value}`);
+  const [, hours, minutes, seconds, millis] = match;
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds) + Number(millis.padEnd(3, "0")) / 1000;
+}
+
+function parseEditableSrt(text) {
+  const blocks = String(text || "")
+    .replace(/\r/g, "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  return blocks.map((block, index) => {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    const timeLineIndex = lines.findIndex((line) => line.includes("-->"));
+    if (timeLineIndex < 0) throw new Error(`第 ${index + 1} 段缺少时间轴`);
+
+    const [startText, endText] = lines[timeLineIndex].split("-->").map((item) => item.trim());
+    const start = parseSrtTime(startText);
+    const end = parseSrtTime(endText);
+    if (!(end > start)) throw new Error(`第 ${index + 1} 段结束时间必须晚于开始时间`);
+
+    const textLines = lines.slice(timeLineIndex + 1);
+    if (!textLines.length) throw new Error(`第 ${index + 1} 段缺少字幕文字`);
+
+    const translation = textLines[textLines.length - 1];
+    const source = textLines.length > 1 ? textLines.slice(0, -1).join(" ") : "";
+    return {
+      id: index + 1,
+      index: index + 1,
+      start,
+      end,
+      text: source,
+      translation,
+    };
+  });
+}
+
 function downloadText(text, filename, link) {
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -1116,6 +1162,7 @@ function downloadText(text, filename, link) {
 
 function showSubtitleResult(segments) {
   const normalized = normalizeSegments(segments);
+  currentSubtitleSegments = normalized;
   const zhSrt = buildSrt(normalized, "translated");
   const bilingualSrt = buildSrt(normalized, "bilingual");
 
@@ -1124,7 +1171,55 @@ function showSubtitleResult(segments) {
   zhSrtUrl = downloadText(zhSrt, cleanSubtitleName(selectedFile.name, "zh"), els.downloadZhSrt);
   bilingualSrtUrl = downloadText(bilingualSrt, cleanSubtitleName(selectedFile.name, "bilingual"), els.downloadBilingualSrt);
   els.subtitlePreview.value = bilingualSrt;
+  if (els.applySubtitleEdits) els.applySubtitleEdits.disabled = false;
+  if (els.reburnSubtitles) els.reburnSubtitles.disabled = false;
   els.subtitleResult.classList.remove("is-hidden");
+}
+
+function applySubtitleEdits() {
+  const parsed = normalizeSegments(parseEditableSrt(els.subtitlePreview.value));
+  if (!parsed.length) throw new Error("字幕内容为空，无法应用。");
+  currentSubtitleSegments = parsed;
+
+  revokeUrl(zhSrtUrl);
+  revokeUrl(bilingualSrtUrl);
+  zhSrtUrl = downloadText(buildSrt(parsed, "translated"), cleanSubtitleName(selectedFile.name, "zh"), els.downloadZhSrt);
+  bilingualSrtUrl = downloadText(buildSrt(parsed, "bilingual"), cleanSubtitleName(selectedFile.name, "bilingual"), els.downloadBilingualSrt);
+  els.subtitlePreview.value = buildSrt(parsed, "bilingual");
+  setProgress(1, "字幕修改已应用");
+}
+
+async function applySubtitleEditsFromButton() {
+  clearError();
+  try {
+    applySubtitleEdits();
+  } catch (error) {
+    showError(error.message || "字幕格式不正确。");
+  }
+}
+
+async function reburnEditedSubtitles() {
+  clearError();
+  try {
+    applySubtitleEdits();
+    setTaskSteps([
+      { id: "awake", label: "保持屏幕常亮" },
+      { id: "burn", label: "本机压制字幕视频" },
+    ]);
+    updateTaskStep("awake", "active", "尝试保持手机屏幕常亮");
+    await acquireScreenWakeLock();
+    els.reburnSubtitles.disabled = true;
+    await burnSubtitlesToVideo(currentSubtitleSegments);
+    setProgress(1, "字幕视频已重新生成");
+    updateTaskStep("awake", "done", "任务完成后会关闭常亮");
+  } catch (error) {
+    console.error(error);
+    showError(error.message || "重新压制失败。");
+    setProgress(0, "失败");
+  } finally {
+    await releaseScreenWakeLock();
+    if (els.reburnSubtitles) els.reburnSubtitles.disabled = false;
+  }
 }
 
 function showAudioExtractionResult(audioFile) {
@@ -1729,6 +1824,8 @@ els.clearFile.addEventListener("click", clearFile);
 els.compressBtn.addEventListener("click", compressVideo);
 els.subtitleBtn.addEventListener("click", generateSubtitles);
 els.shareBurnedVideo?.addEventListener("click", shareBurnedVideo);
+els.applySubtitleEdits?.addEventListener("click", applySubtitleEditsFromButton);
+els.reburnSubtitles?.addEventListener("click", reburnEditedSubtitles);
 els.quality.addEventListener("input", updateQualityLabel);
 els.subtitleFontSize?.addEventListener("input", updateSubtitleStyleLabels);
 els.subtitleBgOpacity?.addEventListener("input", updateSubtitleStyleLabels);

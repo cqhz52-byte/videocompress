@@ -18,7 +18,7 @@
           <div>
             <p class="eyebrow">Mobile Video Studio</p>
             <h1>视频压缩与字幕翻译</h1>
-            <p class="version-line">版本 v0.3.9</p>
+            <p class="version-line">版本 v0.3.10</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -304,9 +304,18 @@
                 <i data-lucide="download" aria-hidden="true"></i>
                 <span>双语字幕</span>
               </a>
+              <button id="applySubtitleEdits" class="download-button secondary" type="button" disabled>
+                <i data-lucide="check" aria-hidden="true"></i>
+                <span>应用修改</span>
+              </button>
+              <button id="reburnSubtitles" class="download-button" type="button" disabled>
+                <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                <span>重新压制</span>
+              </button>
             </div>
           </div>
-          <textarea id="subtitlePreview" readonly spellcheck="false"></textarea>
+          <p class="result-note">可直接编辑下方 SRT。修改文字或时间轴后，先应用修改，再重新压制视频。</p>
+          <textarea id="subtitlePreview" spellcheck="false"></textarea>
         </section>
 
         <section id="audioResult" class="subtitle-result is-hidden" aria-label="音频提取结果">
