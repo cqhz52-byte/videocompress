@@ -261,6 +261,7 @@ button svg,
   position: absolute;
   left: 7%;
   right: 7%;
+  top: 82%;
   z-index: 2;
   padding: 8px 12px;
   border-radius: 6px;
@@ -271,19 +272,7 @@ button svg,
   text-align: center;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   pointer-events: none;
-}
-
-.subtitle-style-preview.is-top {
-  top: 8%;
-}
-
-.subtitle-style-preview.is-middle {
-  top: 50%;
   transform: translateY(-50%);
-}
-
-.subtitle-style-preview.is-bottom {
-  bottom: 12%;
 }
 
 .controls {

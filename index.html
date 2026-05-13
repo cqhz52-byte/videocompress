@@ -18,7 +18,7 @@
           <div>
             <p class="eyebrow">Mobile Video Studio</p>
             <h1>视频压缩与字幕翻译</h1>
-            <p class="version-line">版本 v0.3.12</p>
+            <p class="version-line">版本 v0.3.13</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -60,7 +60,7 @@
 
             <div id="previewFrame" class="preview-frame is-hidden">
               <video id="preview" class="preview" controls muted playsinline></video>
-              <div id="subtitleStylePreview" class="subtitle-style-preview is-bottom" aria-hidden="true">字幕样式预览</div>
+              <div id="subtitleStylePreview" class="subtitle-style-preview" aria-hidden="true">字幕样式预览</div>
             </div>
           </section>
 
@@ -205,12 +205,11 @@
                   </div>
                 </label>
                 <label>
-                  <span>字幕位置</span>
-                  <select id="subtitlePosition">
-                    <option value="bottom" selected>底部</option>
-                    <option value="middle">中间</option>
-                    <option value="top">顶部</option>
-                  </select>
+                  <span>垂直位置</span>
+                  <div class="range-wrap">
+                    <input id="subtitlePositionY" type="range" min="5" max="95" value="82" />
+                    <output id="subtitlePositionYLabel" for="subtitlePositionY">82%</output>
+                  </div>
                 </label>
                 <div class="split-fields">
                   <label>

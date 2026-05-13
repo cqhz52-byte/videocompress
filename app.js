@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.12";
+const APP_VERSION = "v0.3.13";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -45,7 +45,8 @@ const els = {
   ocrCrop: document.querySelector("#ocrCrop"),
   subtitleFontSize: document.querySelector("#subtitleFontSize"),
   subtitleFontSizeLabel: document.querySelector("#subtitleFontSizeLabel"),
-  subtitlePosition: document.querySelector("#subtitlePosition"),
+  subtitlePositionY: document.querySelector("#subtitlePositionY"),
+  subtitlePositionYLabel: document.querySelector("#subtitlePositionYLabel"),
   subtitleColor: document.querySelector("#subtitleColor"),
   subtitleBg: document.querySelector("#subtitleBg"),
   subtitleBgOpacity: document.querySelector("#subtitleBgOpacity"),
@@ -246,6 +247,9 @@ const AAC_SAMPLE_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050
 const MP4_FAST_CHUNK_SIZE = 4 * 1024 * 1024;
 const TRANSFORMERS_JS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
 const SPEECH_MODEL = "onnx-community/whisper-tiny";
+const OCR_SIGNATURE_WIDTH = 32;
+const OCR_SIGNATURE_HEIGHT = 18;
+const OCR_SIMILARITY_THRESHOLD = 2.2;
 const whisperLangMap = {
   en: "english",
   zh: "chinese",
@@ -601,6 +605,9 @@ function updateSubtitleStyleLabels() {
   if (els.subtitleFontSizeLabel) {
     els.subtitleFontSizeLabel.value = `${els.subtitleFontSize.value}%`;
   }
+  if (els.subtitlePositionYLabel) {
+    els.subtitlePositionYLabel.value = `${els.subtitlePositionY.value}%`;
+  }
   if (els.subtitleBgOpacityLabel) {
     els.subtitleBgOpacityLabel.value = `${els.subtitleBgOpacity.value}%`;
   }
@@ -610,7 +617,7 @@ function updateSubtitleStyleLabels() {
 function subtitleStyleSettings() {
   return {
     fontScale: Number(els.subtitleFontSize?.value || 100) / 100,
-    position: els.subtitlePosition?.value || "bottom",
+    positionY: Number(els.subtitlePositionY?.value || 82),
     color: els.subtitleColor?.value || "#ffffff",
     background: els.subtitleBg?.value || "#000000",
     backgroundOpacity: Number(els.subtitleBgOpacity?.value || 58) / 100,
@@ -626,8 +633,7 @@ function updateSubtitleStylePreview() {
   if (!els.subtitleStylePreview) return;
   const style = subtitleStyleSettings();
   els.subtitleStylePreview.textContent = subtitlePreviewText();
-  els.subtitleStylePreview.classList.remove("is-top", "is-middle", "is-bottom");
-  els.subtitleStylePreview.classList.add(`is-${style.position}`);
+  els.subtitleStylePreview.style.top = `${style.positionY}%`;
   els.subtitleStylePreview.style.color = style.color;
   els.subtitleStylePreview.style.backgroundColor = hexToRgba(style.background, style.backgroundOpacity);
   els.subtitleStylePreview.style.fontSize = `${Math.round(18 * style.fontScale)}px`;
@@ -1517,12 +1523,8 @@ function drawSubtitleFrame(ctx, video, segments, width, height) {
   const lines = wrapSubtitleText(ctx, text, maxTextWidth);
   const boxHeight = lines.length * lineHeight + Math.round(fontSize * 0.9);
   const marginY = Math.round(height * 0.08);
-  const boxYMap = {
-    top: marginY,
-    middle: Math.round((height - boxHeight) / 2),
-    bottom: height - boxHeight - marginY,
-  };
-  const boxY = boxYMap[style.position] ?? boxYMap.bottom;
+  const desiredCenterY = height * (style.positionY / 100);
+  const boxY = clamp(Math.round(desiredCenterY - boxHeight / 2), marginY, height - boxHeight - marginY);
 
   ctx.fillStyle = hexToRgba(style.background, style.backgroundOpacity);
   ctx.fillRect(Math.round(width * 0.06), boxY, Math.round(width * 0.88), boxHeight);
@@ -1536,6 +1538,10 @@ function drawSubtitleFrame(ctx, video, segments, width, height) {
     ctx.strokeText(line, width / 2, y);
     ctx.fillText(line, width / 2, y);
   });
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function hexToRgba(hex, opacity) {
@@ -1732,6 +1738,30 @@ function mergeOcrSegments(rawItems, interval) {
   return segments.filter((item) => item.text.length > 1);
 }
 
+function canvasSignature(canvas, sampleCanvas) {
+  sampleCanvas.width = OCR_SIGNATURE_WIDTH;
+  sampleCanvas.height = OCR_SIGNATURE_HEIGHT;
+  const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+  sampleCtx.drawImage(canvas, 0, 0, OCR_SIGNATURE_WIDTH, OCR_SIGNATURE_HEIGHT);
+  const { data } = sampleCtx.getImageData(0, 0, OCR_SIGNATURE_WIDTH, OCR_SIGNATURE_HEIGHT);
+  const signature = new Uint8Array(OCR_SIGNATURE_WIDTH * OCR_SIGNATURE_HEIGHT);
+
+  for (let i = 0, j = 0; i < data.length; i += 4, j += 1) {
+    signature[j] = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+  }
+
+  return signature;
+}
+
+function signatureDistance(a, b) {
+  if (!a || !b || a.length !== b.length) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    sum += Math.abs(a[i] - b[i]);
+  }
+  return sum / a.length;
+}
+
 async function loadTesseract() {
   if (window.Tesseract) return window.Tesseract;
   await new Promise((resolve, reject) => {
@@ -1767,8 +1797,12 @@ async function generateOcrSubtitles() {
   const duration = Math.min(video.duration || 0, 1800);
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const sampleCanvas = document.createElement("canvas");
   const rawItems = [];
   const lang = langMap[els.sourceLang.value] || "eng";
+  let previousSignature = null;
+  let previousText = "";
+  let reusedFrames = 0;
 
   for (let time = 0; time < duration; time += interval) {
     const ratio = duration ? time / duration : 0.1;
@@ -1782,8 +1816,19 @@ async function generateOcrSubtitles() {
     canvas.height = Math.round(canvas.width * (sourceHeight / video.videoWidth));
     ctx.drawImage(video, 0, sourceY, video.videoWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
 
+    const signature = canvasSignature(canvas, sampleCanvas);
+    const distance = signatureDistance(signature, previousSignature);
+    if (previousText && distance <= OCR_SIMILARITY_THRESHOLD) {
+      reusedFrames += 1;
+      rawItems.push({ start: time, end: time + interval, text: previousText });
+      updateTaskStep("ocr", "active", `复用相似画面 ${reusedFrames} 次`);
+      continue;
+    }
+
     const { data } = await Tesseract.recognize(canvas, lang);
     const text = normalizeOcrText(data.text || "");
+    previousSignature = signature;
+    previousText = text;
     rawItems.push({ start: time, end: time + interval, text });
   }
 
@@ -1792,7 +1837,7 @@ async function generateOcrSubtitles() {
     throw new Error("没有识别到画面字幕。可以调大字幕区域或缩短截帧间隔再试。");
   }
 
-  updateTaskStep("ocr", "done", `已识别 ${sourceSegments.length} 条画面字幕`);
+  updateTaskStep("ocr", "done", `已识别 ${sourceSegments.length} 条画面字幕，复用 ${reusedFrames} 帧`);
   setProgress(0.86, "翻译画面字幕");
   updateTaskStep("translate", "active", "准备发送文字给 AI");
   const translated = await translateSegments(sourceSegments);
@@ -1864,7 +1909,7 @@ els.applySubtitleEdits?.addEventListener("click", applySubtitleEditsFromButton);
 els.reburnSubtitles?.addEventListener("click", reburnEditedSubtitles);
 els.quality.addEventListener("input", updateQualityLabel);
 els.subtitleFontSize?.addEventListener("input", updateSubtitleStyleLabels);
-els.subtitlePosition?.addEventListener("change", updateSubtitleStylePreview);
+els.subtitlePositionY?.addEventListener("input", updateSubtitleStyleLabels);
 els.subtitleColor?.addEventListener("input", updateSubtitleStylePreview);
 els.subtitleBg?.addEventListener("input", updateSubtitleStylePreview);
 els.subtitleBgOpacity?.addEventListener("input", updateSubtitleStyleLabels);
