@@ -26,39 +26,41 @@ function fieldValue(value, fallback = "") {
   return value || fallback;
 }
 
-function requireEnv(name) {
+function requireEnv(name, fallback) {
+  if (fallback) return fallback;
   const value = process.env[name];
   if (!value) throw new Error(`Missing environment variable: ${name}`);
   return value;
 }
 
-function createOssClient() {
+function createOssClient(settings = {}) {
   return new OSS({
-    region: requireEnv("ALIYUN_OSS_REGION"),
-    bucket: requireEnv("ALIYUN_OSS_BUCKET"),
-    accessKeyId: requireEnv("ALIYUN_ACCESS_KEY_ID"),
-    accessKeySecret: requireEnv("ALIYUN_ACCESS_KEY_SECRET"),
+    region: requireEnv("ALIYUN_OSS_REGION", settings.ossRegion),
+    bucket: requireEnv("ALIYUN_OSS_BUCKET", settings.ossBucket),
+    accessKeyId: requireEnv("ALIYUN_ACCESS_KEY_ID", settings.ossAccessKeyId),
+    accessKeySecret: requireEnv("ALIYUN_ACCESS_KEY_SECRET", settings.ossAccessKeySecret),
     secure: true,
   });
 }
 
-async function uploadToOss(file) {
-  const client = createOssClient();
-  const prefix = process.env.ALIYUN_OSS_PREFIX || "videocompress/audio";
+async function uploadToOss(file, settings) {
+  const client = createOssClient(settings);
+  const prefix = settings.ossPrefix || process.env.ALIYUN_OSS_PREFIX || "videocompress/audio";
   const ext = path.extname(file.originalFilename || "") || ".m4a";
   const objectName = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
   await client.put(objectName, file.filepath);
   return {
     objectName,
     url: client.signatureUrl(objectName, { expires: 3600 }),
+    settings,
   };
 }
 
-async function submitParaformerTask(audioUrl, sourceLang) {
+async function submitParaformerTask(audioUrl, sourceLang, settings) {
   const response = await fetch("https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${requireEnv("DASHSCOPE_API_KEY")}`,
+      Authorization: `Bearer ${requireEnv("DASHSCOPE_API_KEY", settings.dashscopeKey)}`,
       "Content-Type": "application/json",
       "X-DashScope-Async": "enable",
     },
@@ -85,12 +87,12 @@ async function submitParaformerTask(audioUrl, sourceLang) {
   return taskId;
 }
 
-async function pollParaformerTask(taskId) {
+async function pollParaformerTask(taskId, settings) {
   const deadline = Date.now() + 280000;
   while (Date.now() < deadline) {
     const response = await fetch(`https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`, {
       headers: {
-        Authorization: `Bearer ${requireEnv("DASHSCOPE_API_KEY")}`,
+        Authorization: `Bearer ${requireEnv("DASHSCOPE_API_KEY", settings.dashscopeKey)}`,
       },
     });
     const data = await response.json().catch(() => ({}));
@@ -152,13 +154,13 @@ function extractSegments(result) {
     .filter((item) => item.text);
 }
 
-async function translateSegments(sourceLang, targetLang, segments, req) {
+async function translateSegments(sourceLang, targetLang, segments, req, settings) {
   const protocol = req.headers["x-forwarded-proto"] || "http";
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const response = await fetch(`${protocol}://${host}/api/translate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sourceLang, targetLang, segments }),
+    body: JSON.stringify({ sourceLang, targetLang, segments, apiSettings: settings }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Translation failed.");
@@ -179,20 +181,29 @@ async function handler(req, res) {
 
     const sourceLang = fieldValue(fields.sourceLang, "en");
     const targetLang = fieldValue(fields.targetLang, "zh-CN");
-    uploaded = await uploadToOss(audio);
-    const taskId = await submitParaformerTask(uploaded.url, sourceLang);
-    const taskData = await pollParaformerTask(taskId);
+    const settings = {
+      dashscopeKey: fieldValue(fields.dashscopeKey),
+      deepseekKey: fieldValue(fields.deepseekKey),
+      ossAccessKeyId: fieldValue(fields.ossAccessKeyId),
+      ossAccessKeySecret: fieldValue(fields.ossAccessKeySecret),
+      ossRegion: fieldValue(fields.ossRegion),
+      ossBucket: fieldValue(fields.ossBucket),
+      ossPrefix: fieldValue(fields.ossPrefix),
+    };
+    uploaded = await uploadToOss(audio, settings);
+    const taskId = await submitParaformerTask(uploaded.url, sourceLang, settings);
+    const taskData = await pollParaformerTask(taskId, settings);
     const result = await fetchTranscriptionResult(taskData);
     const sourceSegments = extractSegments(result);
     if (!sourceSegments.length) throw new Error("No speech subtitles were detected.");
 
-    const translated = await translateSegments(sourceLang, targetLang, sourceSegments, req);
+    const translated = await translateSegments(sourceLang, targetLang, sourceSegments, req, settings);
     json(res, 200, { taskId, segments: translated });
   } catch (error) {
     json(res, 500, { error: error.message || "Transcription failed" });
   } finally {
     if (uploaded?.objectName) {
-      createOssClient().delete(uploaded.objectName).catch(() => {});
+      createOssClient(uploaded.settings).delete(uploaded.objectName).catch(() => {});
     }
   }
 }
