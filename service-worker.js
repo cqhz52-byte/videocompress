@@ -1,5 +1,4 @@
-const CACHE_NAME = "video-compressor-v5";
-const APP_VERSION = "v0.3.3";
+const CACHE_NAME = "video-compressor-v6";
 
 const APP_SHELL = [
   "./",
@@ -39,12 +38,6 @@ self.addEventListener("activate", (event) => {
         Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
       )
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: "window" }))
-      .then((clients) => {
-        clients.forEach((client) => {
-          client.postMessage({ type: "APP_UPDATED", version: APP_VERSION });
-        });
-      })
   );
 });
 
