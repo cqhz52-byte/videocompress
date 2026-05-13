@@ -632,6 +632,10 @@ output {
   white-space: nowrap;
 }
 
+.update-toast .ghost-update {
+  background: rgba(255, 255, 255, 0.14);
+}
+
 .is-hidden {
   display: none !important;
 }
