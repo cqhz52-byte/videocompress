@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.5";
+const APP_VERSION = "v0.3.6";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -41,13 +41,7 @@ const els = {
   targetLang: document.querySelector("#targetLang"),
   ocrInterval: document.querySelector("#ocrInterval"),
   ocrCrop: document.querySelector("#ocrCrop"),
-  dashscopeKey: document.querySelector("#dashscopeKey"),
   deepseekKey: document.querySelector("#deepseekKey"),
-  ossAccessKeyId: document.querySelector("#ossAccessKeyId"),
-  ossAccessKeySecret: document.querySelector("#ossAccessKeySecret"),
-  ossRegion: document.querySelector("#ossRegion"),
-  ossBucket: document.querySelector("#ossBucket"),
-  ossPrefix: document.querySelector("#ossPrefix"),
   saveApiSettings: document.querySelector("#saveApiSettings"),
   progressPanel: document.querySelector("#progressPanel"),
   statusText: document.querySelector("#statusText"),
@@ -62,6 +56,9 @@ const els = {
   subtitlePreview: document.querySelector("#subtitlePreview"),
   downloadZhSrt: document.querySelector("#downloadZhSrt"),
   downloadBilingualSrt: document.querySelector("#downloadBilingualSrt"),
+  audioResult: document.querySelector("#audioResult"),
+  audioPreview: document.querySelector("#audioPreview"),
+  downloadAudio: document.querySelector("#downloadAudio"),
   errorBox: document.querySelector("#errorBox"),
   updateToast: document.querySelector("#updateToast"),
   updateText: document.querySelector("#updateText"),
@@ -74,6 +71,7 @@ let sourceUrl = null;
 let outputUrl = null;
 let zhSrtUrl = null;
 let bilingualSrtUrl = null;
+let audioUrl = null;
 let ffmpeg = null;
 let ffmpegReady = false;
 
@@ -120,7 +118,7 @@ async function checkAppVersion() {
     if (!response.ok) return;
     const data = await response.json();
     if (data.version && data.version !== APP_VERSION) {
-      showUpdateToast(`发现新版本 ${data.version}`);
+      showUpdateToast(`????? ${data.version}`);
     }
   } catch (error) {
     console.warn("Version check failed", error);
@@ -178,21 +176,78 @@ function cleanAudioName(name) {
   return `${base || "video"}-audio.webm`;
 }
 
+function cleanAacName(name) {
+  const base = name.replace(/\.[^.]+$/, "");
+  return `${base || "video"}-audio.aac`;
+}
+
+function isMp4LikeFile(file) {
+  return /\.(mp4|m4v|mov)$/i.test(file.name) || /mp4|quicktime/i.test(file.type);
+}
+
+function loadClassicScript(src, globalName) {
+  return new Promise((resolve, reject) => {
+    if (globalName && window[globalName]) {
+      resolve(window[globalName]);
+      return;
+    }
+
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(globalName ? window[globalName] : undefined), { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => resolve(globalName ? window[globalName] : undefined);
+    script.onerror = () => reject(new Error("????????????"));
+    document.head.appendChild(script);
+  });
+}
+
+const AAC_SAMPLE_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+
+function parseAacObjectType(codec) {
+  const match = String(codec || "").match(/mp4a\.40\.(\d+)/i);
+  return match ? Number(match[1]) : 2;
+}
+
+function createAdtsHeader(sampleLength, sampleRate, channelCount, objectType) {
+  const sampleRateIndex = AAC_SAMPLE_RATES.indexOf(sampleRate);
+  if (sampleRateIndex < 0) {
+    throw new Error(`???? ${sampleRate}Hz AAC ??????`);
+  }
+
+  const profile = Math.max(1, Math.min(4, objectType || 2)) - 1;
+  const channelConfig = Math.max(1, Math.min(7, channelCount || 2));
+  const fullLength = sampleLength + 7;
+  const header = new Uint8Array(7);
+
+  header[0] = 0xff;
+  header[1] = 0xf1;
+  header[2] = ((profile & 0x03) << 6) | ((sampleRateIndex & 0x0f) << 2) | ((channelConfig >> 2) & 0x01);
+  header[3] = ((channelConfig & 0x03) << 6) | ((fullLength >> 11) & 0x03);
+  header[4] = (fullLength >> 3) & 0xff;
+  header[5] = ((fullLength & 0x07) << 5) | 0x1f;
+  header[6] = 0xfc;
+
+  return header;
+}
+
+function sampleToUint8Array(sample) {
+  if (sample.data instanceof Uint8Array) return sample.data;
+  return new Uint8Array(sample.data);
+}
+
 function showError(message) {
   els.errorBox.textContent = message;
   els.errorBox.classList.remove("is-hidden");
 }
 
 function apiSettingFields() {
-  return [
-    "dashscopeKey",
-    "deepseekKey",
-    "ossAccessKeyId",
-    "ossAccessKeySecret",
-    "ossRegion",
-    "ossBucket",
-    "ossPrefix",
-  ];
+  return ["deepseekKey"];
 }
 
 function loadApiSettings() {
@@ -212,7 +267,7 @@ function collectApiSettings() {
     settings[key] = els[key]?.value?.trim() || "";
   });
 
-  if (els.saveApiSettings.checked) {
+  if (els.saveApiSettings?.checked) {
     localStorage.setItem("videoSubtitleApiSettings", JSON.stringify(settings));
   } else {
     localStorage.removeItem("videoSubtitleApiSettings");
@@ -221,22 +276,9 @@ function collectApiSettings() {
   return settings;
 }
 
-function validateSpeechSettings(settings) {
-  const missing = [];
-  if (!settings.dashscopeKey) missing.push("阿里百炼 Key");
-  if (!settings.deepseekKey) missing.push("DeepSeek Key");
-  if (!settings.ossAccessKeyId) missing.push("OSS AccessKey ID");
-  if (!settings.ossAccessKeySecret) missing.push("OSS AccessKey Secret");
-  if (!settings.ossRegion) missing.push("OSS Region");
-  if (!settings.ossBucket) missing.push("OSS Bucket");
-  if (missing.length) {
-    throw new Error(`请先填写 API 设置：${missing.join("、")}`);
-  }
-}
-
 function validateTranslateSettings(settings) {
   if (!settings.deepseekKey) {
-    throw new Error("请先填写 API 设置：DeepSeek Key");
+    throw new Error("???? API ???DeepSeek Key");
   }
 }
 
@@ -309,7 +351,7 @@ function waitForVideoEvent(video, eventName) {
     };
     const onError = () => {
       cleanup();
-      reject(new Error("视频读取失败"));
+      reject(new Error("??????"));
     };
     video.addEventListener(eventName, onEvent, { once: true });
     video.addEventListener("error", onError, { once: true });
@@ -318,12 +360,12 @@ function waitForVideoEvent(video, eventName) {
 
 function setCompressBusy(isBusy) {
   els.compressBtn.disabled = isBusy || !selectedFile;
-  els.compressBtn.querySelector("span").textContent = isBusy ? "压缩中" : "开始压缩";
+  els.compressBtn.querySelector("span").textContent = isBusy ? "???" : "????";
 }
 
 function setSubtitleBusy(isBusy) {
   els.subtitleBtn.disabled = isBusy || !selectedFile;
-  els.subtitleBtn.querySelector("span").textContent = isBusy ? "生成中" : "生成中文字幕";
+  els.subtitleBtn.querySelector("span").textContent = isBusy ? "???" : "??????";
 }
 
 function revokeUrl(url) {
@@ -340,12 +382,17 @@ function resetResult() {
 function resetSubtitleResult() {
   revokeUrl(zhSrtUrl);
   revokeUrl(bilingualSrtUrl);
+  revokeUrl(audioUrl);
   zhSrtUrl = null;
   bilingualSrtUrl = null;
+  audioUrl = null;
   els.subtitleResult.classList.add("is-hidden");
   els.subtitlePreview.value = "";
   els.downloadZhSrt.removeAttribute("href");
   els.downloadBilingualSrt.removeAttribute("href");
+  els.audioResult?.classList.add("is-hidden");
+  els.audioPreview?.removeAttribute("src");
+  els.downloadAudio?.removeAttribute("href");
 }
 
 function setPreset(value) {
@@ -362,11 +409,11 @@ function setPreset(value) {
 function updateQualityLabel() {
   const value = Number(els.quality.value);
   if (value <= 26) {
-    els.qualityLabel.value = "清晰";
+    els.qualityLabel.value = "??";
   } else if (value <= 31) {
-    els.qualityLabel.value = "普通";
+    els.qualityLabel.value = "??";
   } else {
-    els.qualityLabel.value = "更小";
+    els.qualityLabel.value = "??";
   }
 }
 
@@ -382,7 +429,7 @@ function setSelectedFile(file) {
   if (!file) return;
   const videoExt = /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(file.name);
   if (!file.type.startsWith("video/") && !videoExt) {
-    showError("请选择视频文件。");
+    showError("????????");
     return;
   }
 
@@ -391,7 +438,7 @@ function setSelectedFile(file) {
   sourceUrl = URL.createObjectURL(file);
 
   els.fileName.textContent = file.name;
-  els.fileMeta.textContent = `${formatSize(file.size)} · ${file.type || "video"}`;
+  els.fileMeta.textContent = `${formatSize(file.size)} ? ${file.type || "video"}`;
   els.fileSummary.classList.remove("is-hidden");
   els.preview.src = sourceUrl;
   els.preview.classList.remove("is-hidden");
@@ -430,18 +477,18 @@ async function getFFmpeg() {
   if (!ffmpeg) {
     ffmpeg = new FFmpeg();
     ffmpeg.on("progress", ({ progress }) => {
-      setProgress(progress, "正在处理视频");
+      setProgress(progress, "??????");
     });
   }
 
-  setProgress(0.04, "加载视频引擎");
+  setProgress(0.04, "??????");
   await withTimeout(
     ffmpeg.load({
       coreURL: new URL("./vendor/ffmpeg/ffmpeg-core.js", import.meta.url).href,
       wasmURL: new URL("./vendor/ffmpeg/ffmpeg-core.wasm", import.meta.url).href,
     }),
     90000,
-    "视频引擎加载超时。请刷新页面，或清除该站点缓存后重试。",
+    "???????????????????????????",
   );
   ffmpegReady = true;
   return ffmpeg;
@@ -472,10 +519,10 @@ function buildCompressArgs(inputName, outputName) {
 
 async function compressVideoNative() {
   if (!canUseNativeCompressor()) {
-    throw new Error("当前浏览器不支持安卓兼容压缩模式。");
+    throw new Error("?????????????????");
   }
 
-  setProgress(0.02, "使用安卓兼容模式");
+  setProgress(0.02, "????????");
   const video = document.createElement("video");
   video.src = sourceUrl || URL.createObjectURL(selectedFile);
   video.muted = true;
@@ -528,7 +575,7 @@ async function compressVideoNative() {
 
     const stopped = new Promise((resolve, reject) => {
       recorder.addEventListener("stop", resolve, { once: true });
-      recorder.addEventListener("error", () => reject(new Error("兼容模式压缩失败")), { once: true });
+      recorder.addEventListener("error", () => reject(new Error("????????")), { once: true });
     });
 
     let drawing = true;
@@ -536,7 +583,7 @@ async function compressVideoNative() {
       if (!drawing) return;
       ctx.drawImage(video, 0, 0, width, height);
       const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-      setProgress(Math.min(0.95, video.currentTime / duration), "安卓兼容压缩中");
+      setProgress(Math.min(0.95, video.currentTime / duration), "???????");
       requestAnimationFrame(draw);
     };
 
@@ -561,9 +608,9 @@ async function compressVideoNative() {
     els.savedSize.textContent = `${Math.round(savedRatio * 100)}%`;
     els.downloadLink.href = outputUrl;
     els.downloadLink.download = cleanNativeVideoName(selectedFile.name);
-    els.downloadLink.querySelector("span").textContent = "下载压缩视频";
+    els.downloadLink.querySelector("span").textContent = "??????";
     els.resultPanel.classList.remove("is-hidden");
-    setProgress(1, "压缩完成");
+    setProgress(1, "????");
   } finally {
     video.remove();
   }
@@ -575,7 +622,7 @@ async function compressVideo() {
   clearError();
   resetResult();
   setCompressBusy(true);
-  setProgress(0, "准备压缩");
+  setProgress(0, "????");
 
   try {
     if (shouldUseNativeCompressor() && canUseNativeCompressor()) {
@@ -586,11 +633,11 @@ async function compressVideo() {
     const inputName = `input-${Date.now()}.${selectedFile.name.split(".").pop() || "mp4"}`;
     const outputName = `output-${Date.now()}.mp4`;
     const engine = await getFFmpeg();
-    setProgress(0.08, "读取视频");
+    setProgress(0.08, "????");
     await engine.writeFile(inputName, await fetchFile(selectedFile));
 
     await engine.exec(buildCompressArgs(inputName, outputName));
-    setProgress(0.96, "生成文件");
+    setProgress(0.96, "????");
 
     const data = await engine.readFile(outputName);
     const blob = new Blob([data.buffer], { type: "video/mp4" });
@@ -603,7 +650,7 @@ async function compressVideo() {
     els.downloadLink.href = outputUrl;
     els.downloadLink.download = cleanVideoName(selectedFile.name);
     els.resultPanel.classList.remove("is-hidden");
-    setProgress(1, "压缩完成");
+    setProgress(1, "????");
 
     await engine.deleteFile(inputName).catch(() => {});
     await engine.deleteFile(outputName).catch(() => {});
@@ -618,14 +665,22 @@ async function compressVideo() {
         console.error(nativeError);
       }
     }
-    showError(error.message || "压缩失败。请换一个视频试试，或降低分辨率后重试。");
-    setProgress(0, "失败");
+    showError(error.message || "????????????????????????");
+    setProgress(0, "??");
   } finally {
     setCompressBusy(false);
   }
 }
 
 async function extractAudio() {
+  if (isMp4LikeFile(selectedFile)) {
+    try {
+      return await extractAudioFastMp4();
+    } catch (error) {
+      console.warn("Fast MP4 audio extraction unavailable, falling back", error);
+    }
+  }
+
   if (isAndroidBrowser() && window.MediaRecorder) {
     return extractAudioNative();
   }
@@ -635,7 +690,7 @@ async function extractAudio() {
   const inputName = `subtitle-input-${Date.now()}.${ext}`;
   const outputName = `subtitle-audio-${Date.now()}.m4a`;
 
-  setProgress(0.08, "提取并压缩音频");
+  setProgress(0.08, "???????");
   await engine.writeFile(inputName, await fetchFile(selectedFile));
   await engine.exec(["-i", inputName, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "48k", outputName]);
   const data = await engine.readFile(outputName);
@@ -648,8 +703,87 @@ async function extractAudio() {
   });
 }
 
+async function extractAudioFastMp4() {
+  setProgress(0.08, "??????????");
+  const MP4Box = await loadClassicScript("./vendor/mp4box/mp4box.all.min.js", "MP4Box");
+  if (!MP4Box?.createFile) throw new Error("???????????");
+
+  const fileBuffer = await selectedFile.arrayBuffer();
+  const mp4boxFile = MP4Box.createFile();
+  const samples = [];
+  let audioTrack = null;
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    let idleTimer = null;
+    const timeoutTimer = window.setTimeout(() => {
+      finish(new Error("??????????"));
+    }, 45000);
+
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutTimer);
+      window.clearTimeout(idleTimer);
+      mp4boxFile.stop?.();
+      if (error) reject(error);
+      else resolve();
+    };
+
+    mp4boxFile.onError = (error) => finish(new Error(error || "MP4 ??????"));
+    mp4boxFile.onReady = (info) => {
+      audioTrack = (info.tracks || []).find((track) => track.type === "audio" && /^mp4a/i.test(track.codec || ""));
+      if (!audioTrack) {
+        finish(new Error("?????????? AAC ??"));
+        return;
+      }
+
+      mp4boxFile.setExtractionOptions(audioTrack.id, null, { nbSamples: 1000 });
+      mp4boxFile.start();
+    };
+
+    mp4boxFile.onSamples = (_id, _user, batch) => {
+      samples.push(...batch);
+      setProgress(0.12, "??????????");
+      window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => finish(), 120);
+    };
+
+    try {
+      fileBuffer.fileStart = 0;
+      mp4boxFile.appendBuffer(fileBuffer);
+      mp4boxFile.flush();
+      idleTimer = window.setTimeout(() => {
+        if (samples.length) finish();
+        else finish(new Error("?????????"));
+      }, 800);
+    } catch (error) {
+      finish(error);
+    }
+  });
+
+  if (!samples.length || !audioTrack) {
+    throw new Error("?????????");
+  }
+
+  const sampleRate = audioTrack.audio?.sample_rate || 48000;
+  const channelCount = audioTrack.audio?.channel_count || 2;
+  const objectType = parseAacObjectType(audioTrack.codec);
+  const chunks = [];
+
+  samples.forEach((sample) => {
+    const data = sampleToUint8Array(sample);
+    chunks.push(createAdtsHeader(data.byteLength, sampleRate, channelCount, objectType), data);
+  });
+
+  const blob = new Blob(chunks, { type: "audio/aac" });
+  if (!blob.size) throw new Error("??????");
+  setProgress(0.22, `????? ${formatSize(blob.size)}`);
+  return new File([blob], cleanAacName(selectedFile.name), { type: "audio/aac" });
+}
+
 async function extractAudioNative() {
-  setProgress(0.08, "安卓兼容提取音频");
+  setProgress(0.08, "????????");
 
   const video = document.createElement("video");
   video.src = sourceUrl || URL.createObjectURL(selectedFile);
@@ -690,28 +824,28 @@ async function extractAudioNative() {
     });
     const stopped = new Promise((resolve, reject) => {
       recorder.addEventListener("stop", resolve, { once: true });
-      recorder.addEventListener("error", () => reject(new Error("安卓兼容音频提取失败")), { once: true });
+      recorder.addEventListener("error", () => reject(new Error("??????????")), { once: true });
     });
 
     recorder.start(1000);
     try {
       await video.play();
     } catch (error) {
-      throw new Error("安卓浏览器需要一次真实点击才能提取音频。请重新点“生成中文字幕”。");
+      throw new Error("?????????????????????????????????");
     }
 
     const start = Date.now();
     while (!video.ended) {
       const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-      setProgress(Math.min(0.25, 0.08 + video.currentTime / duration * 0.17), "安卓兼容提取音频");
-      if (Date.now() - start > 30 * 60 * 1000) throw new Error("音频提取超时");
+      setProgress(Math.min(0.25, 0.08 + video.currentTime / duration * 0.17), "????????");
+      if (Date.now() - start > 30 * 60 * 1000) throw new Error("??????");
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
     recorder.stop();
     await stopped;
     const blob = new Blob(chunks, { type: mimeType });
-    if (!blob.size) throw new Error("没有提取到音频。请确认视频包含声音。");
+    if (!blob.size) throw new Error("??????????????????");
     return new File([blob], cleanAudioName(selectedFile.name), { type: "audio/webm" });
   } finally {
     if (recorder?.state === "recording") recorder.stop();
@@ -776,26 +910,20 @@ function showSubtitleResult(segments) {
   els.subtitleResult.classList.remove("is-hidden");
 }
 
-async function postAudioForTranscription(audioFile) {
-  const settings = collectApiSettings();
-  validateSpeechSettings(settings);
-
-  const form = new FormData();
-  form.append("audio", audioFile);
-  form.append("sourceLang", els.sourceLang.value);
-  form.append("targetLang", els.targetLang.value);
-  Object.entries(settings).forEach(([key, value]) => form.append(key, value));
-
-  const response = await fetch("./api/transcribe", {
-    method: "POST",
-    body: form,
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.error || "语音识别失败");
-  }
-  return data.segments;
+function showAudioExtractionResult(audioFile) {
+  revokeUrl(audioUrl);
+  audioUrl = URL.createObjectURL(audioFile);
+  els.audioPreview.src = audioUrl;
+  els.downloadAudio.href = audioUrl;
+  els.downloadAudio.download = audioFile.name;
+  els.audioResult.classList.remove("is-hidden");
+  els.subtitlePreview.value = [
+    "??????????????????",
+    `???${audioFile.name}`,
+    `???${formatSize(audioFile.size)}`,
+    "",
+    "?????????????????????? AI ???????????????",
+  ].join("\n");
 }
 
 async function translateSegments(segments) {
@@ -815,19 +943,16 @@ async function translateSegments(segments) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || "字幕翻译失败");
+    throw new Error(data.error || "??????");
   }
   return data.segments;
 }
 
 async function generateSpeechSubtitles() {
-  setProgress(0, "准备生成字幕");
+  setProgress(0, "????????");
   const audioFile = await extractAudio();
-  setProgress(0.28, `上传音频 ${formatSize(audioFile.size)}`);
-  const segments = await postAudioForTranscription(audioFile);
-  setProgress(0.82, "翻译字幕");
-  showSubtitleResult(segments);
-  setProgress(1, "字幕完成");
+  showAudioExtractionResult(audioFile);
+  setProgress(1, "??????");
 }
 
 function waitForVideoSeek(video, time) {
@@ -838,7 +963,7 @@ function waitForVideoSeek(video, time) {
     };
     const onError = () => {
       cleanup();
-      reject(new Error("视频定位失败"));
+      reject(new Error("??????"));
     };
     const cleanup = () => {
       video.removeEventListener("seeked", onSeeked);
@@ -877,7 +1002,7 @@ async function loadTesseract() {
     const script = document.createElement("script");
     script.src = "https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js";
     script.onload = resolve;
-    script.onerror = () => reject(new Error("OCR 引擎加载失败"));
+    script.onerror = () => reject(new Error("OCR ??????"));
     document.head.appendChild(script);
   });
   return window.Tesseract;
@@ -893,7 +1018,7 @@ async function generateOcrSubtitles() {
 
   await new Promise((resolve, reject) => {
     video.addEventListener("loadedmetadata", resolve, { once: true });
-    video.addEventListener("error", () => reject(new Error("视频读取失败")), { once: true });
+    video.addEventListener("error", () => reject(new Error("??????")), { once: true });
   });
 
   const interval = Number(els.ocrInterval.value);
@@ -905,7 +1030,7 @@ async function generateOcrSubtitles() {
   const lang = langMap[els.sourceLang.value] || "eng";
 
   for (let time = 0; time < duration; time += interval) {
-    setProgress(duration ? time / duration : 0.1, "识别画面字幕");
+    setProgress(duration ? time / duration : 0.1, "??????");
     await waitForVideoSeek(video, time);
 
     const sourceHeight = video.videoHeight * cropRatio;
@@ -921,13 +1046,13 @@ async function generateOcrSubtitles() {
 
   const sourceSegments = mergeOcrSegments(rawItems, interval);
   if (!sourceSegments.length) {
-    throw new Error("没有识别到画面字幕。可以调大字幕区域或缩短截帧间隔再试。");
+    throw new Error("????????????????????????????");
   }
 
-  setProgress(0.86, "翻译画面字幕");
+  setProgress(0.86, "??????");
   const translated = await translateSegments(sourceSegments);
   showSubtitleResult(translated);
-  setProgress(1, "字幕完成");
+  setProgress(1, "????");
 }
 
 async function generateSubtitles() {
@@ -944,8 +1069,8 @@ async function generateSubtitles() {
     }
   } catch (error) {
     console.error(error);
-    showError(error.message || "字幕生成失败。");
-    setProgress(0, "失败");
+    showError(error.message || "???????");
+    setProgress(0, "??");
   } finally {
     setSubtitleBusy(false);
   }

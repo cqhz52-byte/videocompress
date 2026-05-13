@@ -6,16 +6,6 @@ function json(res, status, payload) {
 }
 
 function getTranslateConfig(apiSettings = {}) {
-  const provider = process.env.TRANSLATE_PROVIDER || "deepseek";
-
-  if (provider === "qwen") {
-    return {
-      apiKey: apiSettings.dashscopeKey || process.env.DASHSCOPE_API_KEY,
-      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-      model: process.env.QWEN_TRANSLATE_MODEL || "qwen-turbo",
-    };
-  }
-
   return {
     apiKey: apiSettings.deepseekKey || process.env.DEEPSEEK_API_KEY,
     baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/chat/completions",
@@ -100,7 +90,7 @@ async function translateBatch(config, sourceLang, targetLang, segments) {
 async function translateSegments(sourceLang, targetLang, segments, apiSettings = {}) {
   const config = getTranslateConfig(apiSettings);
   if (!config.apiKey) {
-    throw new Error("Missing translation API key. Set DEEPSEEK_API_KEY or DASHSCOPE_API_KEY.");
+    throw new Error("Missing translation API key. Set DEEPSEEK_API_KEY.");
   }
 
   const normalized = segments.map((item, index) => ({

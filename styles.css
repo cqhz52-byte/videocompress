@@ -474,6 +474,11 @@ output {
   line-height: 1.55;
 }
 
+.audio-preview {
+  width: 100%;
+  margin-top: 16px;
+}
+
 .ocr-options {
   margin-bottom: 18px;
   padding-top: 2px;

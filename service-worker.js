@@ -1,4 +1,4 @@
-const CACHE_NAME = "video-compressor-v7";
+const CACHE_NAME = "video-compressor-v8";
 
 const APP_SHELL = [
   "./",
@@ -18,6 +18,7 @@ const APP_SHELL = [
   "./vendor/ffmpeg/worker.js",
   "./vendor/ffmpeg/ffmpeg-core.js",
   "./vendor/ffmpeg/ffmpeg-core.wasm",
+  "./vendor/mp4box/mp4box.all.min.js",
   "https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"
 ];
 

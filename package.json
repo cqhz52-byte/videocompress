@@ -4,10 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "npx vercel dev",
-    "check": "node --check app.js && node --check service-worker.js && node --check api/transcribe.js && node --check api/translate.js"
-  },
-  "dependencies": {
-    "ali-oss": "^6.23.0",
-    "formidable": "^3.5.4"
+    "check": "node --check app.js && node --check service-worker.js && node --check api/translate.js"
   }
 }
