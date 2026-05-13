@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.4";
+const APP_VERSION = "v0.3.5";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -171,6 +171,11 @@ function cleanNativeVideoName(name) {
 function cleanSubtitleName(name, suffix) {
   const base = name.replace(/\.[^.]+$/, "");
   return `${base || "video"}-${suffix}.srt`;
+}
+
+function cleanAudioName(name) {
+  const base = name.replace(/\.[^.]+$/, "");
+  return `${base || "video"}-audio.webm`;
 }
 
 function showError(message) {
@@ -414,6 +419,9 @@ function switchTab(tabName) {
   els.tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabName));
   els.compressPanel.classList.toggle("is-active", tabName === "compress");
   els.subtitlePanel.classList.toggle("is-active", tabName === "subtitle");
+  if (tabName === "subtitle") {
+    els.progressPanel.classList.add("is-hidden");
+  }
 }
 
 async function getFFmpeg() {
@@ -618,6 +626,10 @@ async function compressVideo() {
 }
 
 async function extractAudio() {
+  if (isAndroidBrowser() && window.MediaRecorder) {
+    return extractAudioNative();
+  }
+
   const engine = await getFFmpeg();
   const ext = selectedFile.name.split(".").pop() || "mp4";
   const inputName = `subtitle-input-${Date.now()}.${ext}`;
@@ -634,6 +646,78 @@ async function extractAudio() {
   return new File([data.buffer], cleanSubtitleName(selectedFile.name, "audio").replace(".srt", ".m4a"), {
     type: "audio/mp4",
   });
+}
+
+async function extractAudioNative() {
+  setProgress(0.08, "安卓兼容提取音频");
+
+  const video = document.createElement("video");
+  video.src = sourceUrl || URL.createObjectURL(selectedFile);
+  video.playsInline = true;
+  video.preload = "auto";
+  video.setAttribute("playsinline", "");
+  video.setAttribute("webkit-playsinline", "");
+  video.style.position = "fixed";
+  video.style.width = "1px";
+  video.style.height = "1px";
+  video.style.opacity = "0";
+  video.style.pointerEvents = "none";
+  video.style.left = "-10px";
+  video.style.top = "-10px";
+  document.body.appendChild(video);
+
+  let audioContext = null;
+  let recorder = null;
+
+  try {
+    await waitForVideoEvent(video, "loadedmetadata");
+
+    audioContext = new AudioContext();
+    await audioContext.resume();
+    const source = audioContext.createMediaElementSource(video);
+    const destination = audioContext.createMediaStreamDestination();
+    source.connect(destination);
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+    recorder = new MediaRecorder(destination.stream, {
+      mimeType,
+      audioBitsPerSecond: 48000,
+    });
+
+    const chunks = [];
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data.size) chunks.push(event.data);
+    });
+    const stopped = new Promise((resolve, reject) => {
+      recorder.addEventListener("stop", resolve, { once: true });
+      recorder.addEventListener("error", () => reject(new Error("安卓兼容音频提取失败")), { once: true });
+    });
+
+    recorder.start(1000);
+    try {
+      await video.play();
+    } catch (error) {
+      throw new Error("安卓浏览器需要一次真实点击才能提取音频。请重新点“生成中文字幕”。");
+    }
+
+    const start = Date.now();
+    while (!video.ended) {
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+      setProgress(Math.min(0.25, 0.08 + video.currentTime / duration * 0.17), "安卓兼容提取音频");
+      if (Date.now() - start > 30 * 60 * 1000) throw new Error("音频提取超时");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    recorder.stop();
+    await stopped;
+    const blob = new Blob(chunks, { type: mimeType });
+    if (!blob.size) throw new Error("没有提取到音频。请确认视频包含声音。");
+    return new File([blob], cleanAudioName(selectedFile.name), { type: "audio/webm" });
+  } finally {
+    if (recorder?.state === "recording") recorder.stop();
+    await audioContext?.close().catch(() => {});
+    video.remove();
+  }
 }
 
 function normalizeSegments(items) {
