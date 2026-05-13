@@ -5,19 +5,19 @@ function json(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function getTranslateConfig() {
+function getTranslateConfig(apiSettings = {}) {
   const provider = process.env.TRANSLATE_PROVIDER || "deepseek";
 
   if (provider === "qwen") {
     return {
-      apiKey: process.env.DASHSCOPE_API_KEY,
+      apiKey: apiSettings.dashscopeKey || process.env.DASHSCOPE_API_KEY,
       baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
       model: process.env.QWEN_TRANSLATE_MODEL || "qwen-turbo",
     };
   }
 
   return {
-    apiKey: process.env.DEEPSEEK_API_KEY,
+    apiKey: apiSettings.deepseekKey || process.env.DEEPSEEK_API_KEY,
     baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/chat/completions",
     model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
   };
@@ -97,8 +97,8 @@ async function translateBatch(config, sourceLang, targetLang, segments) {
   }));
 }
 
-async function translateSegments(sourceLang, targetLang, segments) {
-  const config = getTranslateConfig();
+async function translateSegments(sourceLang, targetLang, segments, apiSettings = {}) {
+  const config = getTranslateConfig(apiSettings);
   if (!config.apiKey) {
     throw new Error("Missing translation API key. Set DEEPSEEK_API_KEY or DASHSCOPE_API_KEY.");
   }
@@ -126,7 +126,12 @@ async function handler(req, res) {
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
-    const segments = await translateSegments(body.sourceLang || "en", body.targetLang || "zh-CN", body.segments || []);
+    const segments = await translateSegments(
+      body.sourceLang || "en",
+      body.targetLang || "zh-CN",
+      body.segments || [],
+      body.apiSettings || {},
+    );
     json(res, 200, { segments });
   } catch (error) {
     json(res, 500, { error: error.message || "Translation failed" });
