@@ -1,4 +1,5 @@
-const CACHE_NAME = "video-compressor-v3";
+const CACHE_NAME = "video-compressor-v4";
+const APP_VERSION = "v0.3.2";
 
 const APP_SHELL = [
   "./",
@@ -6,6 +7,7 @@ const APP_SHELL = [
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
+  "./version.json",
   "./icons/icon.svg",
   "https://unpkg.com/lucide@latest/dist/umd/lucide.min.js",
   "./vendor/ffmpeg/index.js",
@@ -37,6 +39,12 @@ self.addEventListener("activate", (event) => {
         Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
       )
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window" }))
+      .then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: "APP_UPDATED", version: APP_VERSION });
+        });
+      })
   );
 });
 
