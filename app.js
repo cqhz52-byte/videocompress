@@ -1,3 +1,6 @@
+import { FFmpeg } from "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js";
+import { fetchFile, toBlobURL } from "https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js";
+
 const presets = {
   small: { resolution: "720", crf: 33 },
   balanced: { resolution: "1080", crf: 30 },
@@ -67,7 +70,6 @@ let zhSrtUrl = null;
 let bilingualSrtUrl = null;
 let ffmpeg = null;
 let ffmpegReady = false;
-let ffmpegLibraryReady = false;
 
 window.lucide?.createIcons();
 
@@ -91,45 +93,6 @@ function formatSize(bytes) {
     unit += 1;
   }
   return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
-}
-
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${src}"]`);
-    if (existing) {
-      existing.addEventListener("load", resolve, { once: true });
-      existing.addEventListener("error", reject, { once: true });
-      if (window.FFmpegWASM) resolve();
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = resolve;
-    script.onerror = () => reject(new Error("FFmpeg 脚本加载失败"));
-    document.head.appendChild(script);
-  });
-}
-
-async function loadFFmpegLibrary() {
-  if (ffmpegLibraryReady) return;
-  await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.js");
-  if (!window.FFmpegWASM?.FFmpeg) {
-    throw new Error("FFmpeg 引擎加载失败");
-  }
-  ffmpegLibraryReady = true;
-}
-
-async function toBlobURL(url, mimeType) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`资源加载失败：${url}`);
-  const blob = await response.blob();
-  return URL.createObjectURL(new Blob([blob], { type: mimeType }));
-}
-
-async function fetchFile(file) {
-  return new Uint8Array(await file.arrayBuffer());
 }
 
 function cleanVideoName(name) {
@@ -327,18 +290,17 @@ async function getFFmpeg() {
   if (ffmpegReady) return ffmpeg;
 
   if (!ffmpeg) {
-    await loadFFmpegLibrary();
-    ffmpeg = new window.FFmpegWASM.FFmpeg();
+    ffmpeg = new FFmpeg();
     ffmpeg.on("progress", ({ progress }) => {
       setProgress(progress, "正在处理视频");
     });
   }
 
   setProgress(0.04, "加载视频引擎");
-  const ffmpegBaseURL = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd";
-  const coreBaseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
+  const ffmpegBaseURL = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm";
+  const coreBaseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
   await ffmpeg.load({
-    classWorkerURL: await toBlobURL(`${ffmpegBaseURL}/814.ffmpeg.js`, "text/javascript"),
+    classWorkerURL: await toBlobURL(`${ffmpegBaseURL}/worker.js`, "text/javascript"),
     coreURL: await toBlobURL(`${coreBaseURL}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${coreBaseURL}/ffmpeg-core.wasm`, "application/wasm"),
   });
