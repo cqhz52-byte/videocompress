@@ -1,5 +1,7 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
+const APP_VERSION = "v0.3.2";
+
 const presets = {
   small: { resolution: "720", crf: 33 },
   balanced: { resolution: "1080", crf: 30 },
@@ -61,7 +63,9 @@ const els = {
   downloadBilingualSrt: document.querySelector("#downloadBilingualSrt"),
   errorBox: document.querySelector("#errorBox"),
   updateToast: document.querySelector("#updateToast"),
+  updateText: document.querySelector("#updateText"),
   reloadUpdate: document.querySelector("#reloadUpdate"),
+  clearCacheUpdate: document.querySelector("#clearCacheUpdate"),
 };
 
 let selectedFile = null;
@@ -75,6 +79,7 @@ let ffmpegReady = false;
 window.lucide?.createIcons();
 
 loadApiSettings();
+checkAppVersion();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -86,7 +91,7 @@ if ("serviceWorker" in navigator) {
           if (!worker) return;
           worker.addEventListener("statechange", () => {
             if (worker.state === "installed" && navigator.serviceWorker.controller) {
-              els.updateToast.classList.remove("is-hidden");
+              showUpdateToast("发现新版本");
             }
           });
         });
@@ -95,11 +100,56 @@ if ("serviceWorker" in navigator) {
         console.warn("Service worker registration failed", error);
       });
   });
+
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type === "APP_UPDATED") {
+      showUpdateToast(`发现新版本 ${event.data.version || ""}`.trim());
+    }
+  });
 }
 
 els.reloadUpdate?.addEventListener("click", () => {
   window.location.reload();
 });
+
+els.clearCacheUpdate?.addEventListener("click", async () => {
+  await clearAppCacheAndReload();
+});
+
+function showUpdateToast(message) {
+  if (els.updateText) els.updateText.textContent = message;
+  els.updateToast?.classList.remove("is-hidden");
+}
+
+async function checkAppVersion() {
+  try {
+    const response = await fetch(`./version.json?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data.version && data.version !== APP_VERSION) {
+      showUpdateToast(`发现新版本 ${data.version}`);
+    }
+  } catch (error) {
+    console.warn("Version check failed", error);
+  }
+}
+
+async function clearAppCacheAndReload() {
+  try {
+    if ("serviceWorker" in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    }
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+  } finally {
+    window.location.href = `${window.location.pathname}?t=${Date.now()}`;
+  }
+}
 
 function formatSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "-";
