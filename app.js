@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.2";
+const APP_VERSION = "v0.3.3";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -172,6 +172,11 @@ function cleanVideoName(name) {
   return `${base || "video"}-compressed.mp4`;
 }
 
+function cleanNativeVideoName(name) {
+  const base = name.replace(/\.[^.]+$/, "");
+  return `${base || "video"}-compressed.webm`;
+}
+
 function cleanSubtitleName(name, suffix) {
   const base = name.replace(/\.[^.]+$/, "");
   return `${base || "video"}-${suffix}.srt`;
@@ -259,6 +264,53 @@ function withTimeout(promise, ms, message) {
     timer = setTimeout(() => reject(new Error(message)), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function isAndroidBrowser() {
+  return /Android/i.test(navigator.userAgent);
+}
+
+function canUseNativeCompressor() {
+  return Boolean(window.MediaRecorder && HTMLCanvasElement.prototype.captureStream);
+}
+
+function pickNativeMimeType() {
+  const types = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+  return types.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function nativeVideoBitsPerSecond() {
+  const quality = Number(els.quality.value);
+  if (quality >= 33) return 650000;
+  if (quality >= 29) return 1200000;
+  return 2200000;
+}
+
+function targetCanvasSize(video) {
+  const maxSide = els.resolution.value === "source" ? Math.max(video.videoWidth, video.videoHeight) : Number(els.resolution.value);
+  const ratio = Math.min(1, maxSide / Math.max(video.videoWidth, video.videoHeight));
+  const width = Math.max(2, Math.round((video.videoWidth * ratio) / 2) * 2);
+  const height = Math.max(2, Math.round((video.videoHeight * ratio) / 2) * 2);
+  return { width, height };
+}
+
+function waitForVideoEvent(video, eventName) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      video.removeEventListener(eventName, onEvent);
+      video.removeEventListener("error", onError);
+    };
+    const onEvent = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("视频读取失败"));
+    };
+    video.addEventListener(eventName, onEvent, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
 }
 
 function setCompressBusy(isBusy) {
@@ -412,6 +464,91 @@ function buildCompressArgs(inputName, outputName) {
   return args;
 }
 
+async function compressVideoNative() {
+  if (!canUseNativeCompressor()) {
+    throw new Error("当前浏览器不支持安卓兼容压缩模式。");
+  }
+
+  setProgress(0.02, "使用安卓兼容模式");
+  const video = document.createElement("video");
+  video.src = sourceUrl || URL.createObjectURL(selectedFile);
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+
+  await waitForVideoEvent(video, "loadedmetadata");
+  const { width, height } = targetCanvasSize(video);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const canvasStream = canvas.captureStream(24);
+  const tracks = [...canvasStream.getVideoTracks()];
+  let audioContext = null;
+
+  if (!els.stripAudio.checked) {
+    try {
+      audioContext = new AudioContext();
+      const source = audioContext.createMediaElementSource(video);
+      const destination = audioContext.createMediaStreamDestination();
+      source.connect(destination);
+      source.connect(audioContext.destination);
+      tracks.push(...destination.stream.getAudioTracks());
+    } catch (error) {
+      console.warn("Native compressor audio track unavailable", error);
+    }
+  }
+
+  const mimeType = pickNativeMimeType();
+  const recorder = new MediaRecorder(new MediaStream(tracks), {
+    mimeType,
+    videoBitsPerSecond: nativeVideoBitsPerSecond(),
+  });
+  const chunks = [];
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size) chunks.push(event.data);
+  });
+
+  const stopped = new Promise((resolve, reject) => {
+    recorder.addEventListener("stop", resolve, { once: true });
+    recorder.addEventListener("error", () => reject(new Error("兼容模式压缩失败")), { once: true });
+  });
+
+  let drawing = true;
+  const draw = () => {
+    if (!drawing) return;
+    ctx.drawImage(video, 0, 0, width, height);
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+    setProgress(Math.min(0.95, video.currentTime / duration), "安卓兼容压缩中");
+    requestAnimationFrame(draw);
+  };
+
+  recorder.start(1000);
+  await video.play();
+  if (!els.stripAudio.checked) video.muted = false;
+  draw();
+  await new Promise((resolve) => {
+    video.addEventListener("ended", resolve, { once: true });
+  });
+  drawing = false;
+  recorder.stop();
+  await stopped;
+  tracks.forEach((track) => track.stop());
+  await audioContext?.close().catch(() => {});
+
+  const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+  outputUrl = URL.createObjectURL(blob);
+  els.beforeSize.textContent = formatSize(selectedFile.size);
+  els.afterSize.textContent = formatSize(blob.size);
+  const savedRatio = Math.max(0, 1 - blob.size / selectedFile.size);
+  els.savedSize.textContent = `${Math.round(savedRatio * 100)}%`;
+  els.downloadLink.href = outputUrl;
+  els.downloadLink.download = cleanNativeVideoName(selectedFile.name);
+  els.downloadLink.querySelector("span").textContent = "下载压缩视频";
+  els.resultPanel.classList.remove("is-hidden");
+  setProgress(1, "压缩完成");
+}
+
 async function compressVideo() {
   if (!selectedFile) return;
 
@@ -420,10 +557,14 @@ async function compressVideo() {
   setCompressBusy(true);
   setProgress(0, "准备压缩");
 
-  const inputName = `input-${Date.now()}.${selectedFile.name.split(".").pop() || "mp4"}`;
-  const outputName = `output-${Date.now()}.mp4`;
-
   try {
+    if (isAndroidBrowser() && canUseNativeCompressor()) {
+      await compressVideoNative();
+      return;
+    }
+
+    const inputName = `input-${Date.now()}.${selectedFile.name.split(".").pop() || "mp4"}`;
+    const outputName = `output-${Date.now()}.mp4`;
     const engine = await getFFmpeg();
     setProgress(0.08, "读取视频");
     await engine.writeFile(inputName, await fetchFile(selectedFile));
@@ -448,7 +589,16 @@ async function compressVideo() {
     await engine.deleteFile(outputName).catch(() => {});
   } catch (error) {
     console.error(error);
-    showError("压缩失败。请换一个视频试试，或降低分辨率后重试。");
+    if (!isAndroidBrowser() && canUseNativeCompressor()) {
+      try {
+        resetResult();
+        await compressVideoNative();
+        return;
+      } catch (nativeError) {
+        console.error(nativeError);
+      }
+    }
+    showError(error.message || "压缩失败。请换一个视频试试，或降低分辨率后重试。");
     setProgress(0, "失败");
   } finally {
     setCompressBusy(false);
