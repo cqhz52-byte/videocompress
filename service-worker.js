@@ -1,5 +1,5 @@
-const CACHE_NAME = "video-compressor-v4";
-const APP_VERSION = "v0.3.2";
+const CACHE_NAME = "video-compressor-v5";
+const APP_VERSION = "v0.3.3";
 
 const APP_SHELL = [
   "./",
