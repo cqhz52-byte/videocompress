@@ -60,6 +60,8 @@ const els = {
   downloadZhSrt: document.querySelector("#downloadZhSrt"),
   downloadBilingualSrt: document.querySelector("#downloadBilingualSrt"),
   errorBox: document.querySelector("#errorBox"),
+  updateToast: document.querySelector("#updateToast"),
+  reloadUpdate: document.querySelector("#reloadUpdate"),
 };
 
 let selectedFile = null;
@@ -76,11 +78,28 @@ loadApiSettings();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./service-worker.js").catch((error) => {
-      console.warn("Service worker registration failed", error);
-    });
+    navigator.serviceWorker
+      .register("./service-worker.js")
+      .then((registration) => {
+        registration.addEventListener("updatefound", () => {
+          const worker = registration.installing;
+          if (!worker) return;
+          worker.addEventListener("statechange", () => {
+            if (worker.state === "installed" && navigator.serviceWorker.controller) {
+              els.updateToast.classList.remove("is-hidden");
+            }
+          });
+        });
+      })
+      .catch((error) => {
+        console.warn("Service worker registration failed", error);
+      });
   });
 }
+
+els.reloadUpdate?.addEventListener("click", () => {
+  window.location.reload();
+});
 
 function formatSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "-";
@@ -182,6 +201,14 @@ function setProgress(ratio, status) {
   els.statusText.textContent = status;
   els.progressText.textContent = `${percent}%`;
   els.progressBar.style.width = `${percent}%`;
+}
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function setCompressBusy(isBusy) {
@@ -300,10 +327,14 @@ async function getFFmpeg() {
   }
 
   setProgress(0.04, "加载视频引擎");
-  await ffmpeg.load({
-    coreURL: new URL("./vendor/ffmpeg/ffmpeg-core.js", import.meta.url).href,
-    wasmURL: new URL("./vendor/ffmpeg/ffmpeg-core.wasm", import.meta.url).href,
-  });
+  await withTimeout(
+    ffmpeg.load({
+      coreURL: new URL("./vendor/ffmpeg/ffmpeg-core.js", import.meta.url).href,
+      wasmURL: new URL("./vendor/ffmpeg/ffmpeg-core.wasm", import.meta.url).href,
+    }),
+    90000,
+    "视频引擎加载超时。请刷新页面，或清除该站点缓存后重试。",
+  );
   ffmpegReady = true;
   return ffmpeg;
 }
