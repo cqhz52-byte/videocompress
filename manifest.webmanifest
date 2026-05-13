@@ -1,7 +1,7 @@
 {
-  "name": "???????????",
-  "short_name": "????",
-  "description": "????????????????????? v0.3.6",
+  "name": "手机视频压缩与字幕翻译",
+  "short_name": "视频字幕",
+  "description": "在手机浏览器压缩视频，并生成翻译字幕。版本 v0.3.6",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -18,8 +18,8 @@
   ],
   "shortcuts": [
     {
-      "name": "????",
-      "short_name": "??",
+      "name": "开始压缩",
+      "short_name": "压缩",
       "url": "./",
       "icons": [
         {
