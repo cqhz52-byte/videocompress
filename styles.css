@@ -472,6 +472,82 @@ output {
   padding-top: 2px;
 }
 
+.api-settings {
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.api-settings summary,
+.advanced-settings summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.api-settings summary svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.field-stack {
+  display: grid;
+  gap: 12px;
+  padding: 0 12px 14px;
+}
+
+.field-stack label {
+  display: grid;
+  gap: 6px;
+}
+
+.field-stack label span,
+.advanced-settings summary {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.field-stack input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.split-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.advanced-settings {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 4px 10px 10px;
+  background: #fbfcfe;
+}
+
+.advanced-settings[open] {
+  display: grid;
+  gap: 10px;
+}
+
+.setting-switch {
+  display: flex !important;
+  grid-template-columns: none !important;
+}
+
 .result-panel h2 {
   margin: 0;
   font-size: 24px;
