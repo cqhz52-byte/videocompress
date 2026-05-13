@@ -114,6 +114,35 @@ button svg,
   margin-top: 28px;
 }
 
+.tabs {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.tab {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tab.is-active {
+  background: var(--surface);
+  color: var(--accent-strong);
+  box-shadow: 0 8px 20px rgba(31, 45, 61, 0.08);
+}
+
 .drop-panel,
 .controls {
   min-width: 0;
@@ -203,6 +232,14 @@ button svg,
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfe;
+}
+
+.panel {
+  display: none;
+}
+
+.panel.is-active {
+  display: block;
 }
 
 .control-block,
@@ -349,7 +386,7 @@ output {
 }
 
 .progress-panel {
-  margin-bottom: 0;
+  margin: 24px 0 0;
 }
 
 .progress-meta {
@@ -381,6 +418,58 @@ output {
   background: #f8fbf7;
   border: 1px solid #cfe7d6;
   flex-wrap: wrap;
+}
+
+.subtitle-result {
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fbfcfe;
+}
+
+.subtitle-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.subtitle-head h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.download-button.secondary {
+  background: var(--accent);
+}
+
+.subtitle-result textarea {
+  width: 100%;
+  min-height: 260px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--ink);
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", "Microsoft YaHei Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ocr-options {
+  margin-bottom: 18px;
+  padding-top: 2px;
 }
 
 .result-panel h2 {
@@ -463,6 +552,16 @@ output {
   .download-button {
     width: 100%;
   }
+
+  .tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tab {
+    justify-content: center;
+  }
 }
 
 @media (max-width: 520px) {
@@ -483,5 +582,10 @@ output {
 
   .stats {
     grid-template-columns: 1fr;
+  }
+
+  .result-actions,
+  .result-actions .download-button {
+    width: 100%;
   }
 }
