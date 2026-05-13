@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.10";
+const APP_VERSION = "v0.3.11";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -1535,7 +1535,8 @@ async function burnSubtitlesToVideo(segments) {
   updateTaskStep("burn", "active", "准备画面和音轨");
   const video = document.createElement("video");
   video.src = sourceUrl || URL.createObjectURL(selectedFile);
-  video.muted = true;
+  video.muted = false;
+  video.volume = 1;
   video.playsInline = true;
   video.preload = "auto";
   video.setAttribute("playsinline", "");
@@ -1563,16 +1564,26 @@ async function burnSubtitlesToVideo(segments) {
     const tracks = [...canvasStream.getVideoTracks()];
 
     try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      audioContext = new AudioContextClass();
-      await audioContext.resume();
-      const source = audioContext.createMediaElementSource(video);
-      const destination = audioContext.createMediaStreamDestination();
-      source.connect(destination);
-      source.connect(audioContext.destination);
-      const audioTracks = destination.stream.getAudioTracks();
-      tracks.push(...audioTracks);
-      hasAudioTrack = audioTracks.length > 0;
+      const capturedStream = video.captureStream?.() || video.mozCaptureStream?.();
+      const capturedAudioTracks = capturedStream?.getAudioTracks?.() || [];
+      if (capturedAudioTracks.length) {
+        tracks.push(...capturedAudioTracks);
+        hasAudioTrack = true;
+      } else {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContextClass();
+        await audioContext.resume();
+        const source = audioContext.createMediaElementSource(video);
+        const destination = audioContext.createMediaStreamDestination();
+        const silentGain = audioContext.createGain();
+        silentGain.gain.value = 0;
+        source.connect(destination);
+        source.connect(silentGain);
+        silentGain.connect(audioContext.destination);
+        const audioTracks = destination.stream.getAudioTracks();
+        tracks.push(...audioTracks);
+        hasAudioTrack = audioTracks.length > 0;
+      }
     } catch (error) {
       console.warn("Subtitle burn audio track unavailable", error);
     }
@@ -1622,9 +1633,9 @@ async function burnSubtitlesToVideo(segments) {
     els.downloadBurnedVideo.href = burnedVideoUrl;
     els.downloadBurnedVideo.download = burnedVideoFile.name;
     if (els.shareBurnedVideo) {
-      const canShareFile = Boolean(navigator.canShare?.({ files: [burnedVideoFile] }));
-      els.shareBurnedVideo.disabled = !canShareFile;
-      els.shareBurnedVideo.title = canShareFile ? "调用手机系统分享" : "当前浏览器不支持直接分享文件，请先下载再分享";
+      const canShareFile = Boolean(navigator.share && navigator.canShare?.({ files: [burnedVideoFile] }));
+      els.shareBurnedVideo.disabled = false;
+      els.shareBurnedVideo.title = canShareFile ? "调用手机系统分享" : "当前浏览器不支持直接分享文件，点击会先下载视频";
     }
     if (els.burnMeta) els.burnMeta.textContent = burnedVideoFormatNote(hasAudioTrack);
     els.burnResult.classList.remove("is-hidden");
@@ -1796,7 +1807,8 @@ async function shareBurnedVideo() {
   }
 
   if (!navigator.share || !navigator.canShare?.({ files: [burnedVideoFile] })) {
-    showError("当前浏览器不支持直接分享视频文件，请先下载后再转发。");
+    els.downloadBurnedVideo?.click();
+    showError("当前浏览器不支持直接分享视频文件，已为你触发下载；下载后可在微信或邮件中选择该视频发送。");
     return;
   }
 

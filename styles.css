@@ -243,6 +243,12 @@ button svg,
   object-fit: contain;
 }
 
+.burned-preview {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
 .controls {
   padding: 20px;
   border: 1px solid var(--line);
