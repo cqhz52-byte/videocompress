@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.3";
+const APP_VERSION = "v0.3.4";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -33,6 +33,7 @@ const els = {
   quality: document.querySelector("#quality"),
   qualityLabel: document.querySelector("#qualityLabel"),
   stripAudio: document.querySelector("#stripAudio"),
+  compressMode: document.querySelector("#compressMode"),
   compressBtn: document.querySelector("#compressBtn"),
   subtitleBtn: document.querySelector("#subtitleBtn"),
   ocrOptions: document.querySelector("#ocrOptions"),
@@ -89,27 +90,17 @@ if ("serviceWorker" in navigator) {
         registration.addEventListener("updatefound", () => {
           const worker = registration.installing;
           if (!worker) return;
-          worker.addEventListener("statechange", () => {
-            if (worker.state === "installed" && navigator.serviceWorker.controller) {
-              showUpdateToast("发现新版本");
-            }
-          });
+          worker.addEventListener("statechange", () => {});
         });
       })
       .catch((error) => {
         console.warn("Service worker registration failed", error);
       });
   });
-
-  navigator.serviceWorker.addEventListener("message", (event) => {
-    if (event.data?.type === "APP_UPDATED") {
-      showUpdateToast(`发现新版本 ${event.data.version || ""}`.trim());
-    }
-  });
 }
 
-els.reloadUpdate?.addEventListener("click", () => {
-  window.location.reload();
+els.reloadUpdate?.addEventListener("click", async () => {
+  await clearAppCacheAndReload();
 });
 
 els.clearCacheUpdate?.addEventListener("click", async () => {
@@ -272,6 +263,13 @@ function isAndroidBrowser() {
 
 function canUseNativeCompressor() {
   return Boolean(window.MediaRecorder && HTMLCanvasElement.prototype.captureStream);
+}
+
+function shouldUseNativeCompressor() {
+  const mode = els.compressMode?.value || "auto";
+  if (mode === "native") return true;
+  if (mode === "ffmpeg") return false;
+  return isAndroidBrowser();
 }
 
 function pickNativeMimeType() {
@@ -475,78 +473,92 @@ async function compressVideoNative() {
   video.muted = true;
   video.playsInline = true;
   video.preload = "auto";
+  video.setAttribute("playsinline", "");
+  video.setAttribute("webkit-playsinline", "");
+  video.style.position = "fixed";
+  video.style.width = "1px";
+  video.style.height = "1px";
+  video.style.opacity = "0";
+  video.style.pointerEvents = "none";
+  video.style.left = "-10px";
+  video.style.top = "-10px";
+  document.body.appendChild(video);
 
-  await waitForVideoEvent(video, "loadedmetadata");
-  const { width, height } = targetCanvasSize(video);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  const canvasStream = canvas.captureStream(24);
-  const tracks = [...canvasStream.getVideoTracks()];
-  let audioContext = null;
+  try {
+    await waitForVideoEvent(video, "loadedmetadata");
+    const { width, height } = targetCanvasSize(video);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    const canvasStream = canvas.captureStream(24);
+    const tracks = [...canvasStream.getVideoTracks()];
+    let audioContext = null;
 
-  if (!els.stripAudio.checked) {
-    try {
-      audioContext = new AudioContext();
-      const source = audioContext.createMediaElementSource(video);
-      const destination = audioContext.createMediaStreamDestination();
-      source.connect(destination);
-      source.connect(audioContext.destination);
-      tracks.push(...destination.stream.getAudioTracks());
-    } catch (error) {
-      console.warn("Native compressor audio track unavailable", error);
+    if (!els.stripAudio.checked) {
+      try {
+        audioContext = new AudioContext();
+        const source = audioContext.createMediaElementSource(video);
+        const destination = audioContext.createMediaStreamDestination();
+        source.connect(destination);
+        source.connect(audioContext.destination);
+        tracks.push(...destination.stream.getAudioTracks());
+      } catch (error) {
+        console.warn("Native compressor audio track unavailable", error);
+      }
     }
+
+    const mimeType = pickNativeMimeType();
+    const recorder = new MediaRecorder(new MediaStream(tracks), {
+      mimeType,
+      videoBitsPerSecond: nativeVideoBitsPerSecond(),
+    });
+    const chunks = [];
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data.size) chunks.push(event.data);
+    });
+
+    const stopped = new Promise((resolve, reject) => {
+      recorder.addEventListener("stop", resolve, { once: true });
+      recorder.addEventListener("error", () => reject(new Error("兼容模式压缩失败")), { once: true });
+    });
+
+    let drawing = true;
+    const draw = () => {
+      if (!drawing) return;
+      ctx.drawImage(video, 0, 0, width, height);
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+      setProgress(Math.min(0.95, video.currentTime / duration), "安卓兼容压缩中");
+      requestAnimationFrame(draw);
+    };
+
+    recorder.start(1000);
+    await video.play();
+    if (!els.stripAudio.checked) video.muted = false;
+    draw();
+    await new Promise((resolve) => {
+      video.addEventListener("ended", resolve, { once: true });
+    });
+    drawing = false;
+    recorder.stop();
+    await stopped;
+    tracks.forEach((track) => track.stop());
+    await audioContext?.close().catch(() => {});
+
+    const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+    outputUrl = URL.createObjectURL(blob);
+    els.beforeSize.textContent = formatSize(selectedFile.size);
+    els.afterSize.textContent = formatSize(blob.size);
+    const savedRatio = Math.max(0, 1 - blob.size / selectedFile.size);
+    els.savedSize.textContent = `${Math.round(savedRatio * 100)}%`;
+    els.downloadLink.href = outputUrl;
+    els.downloadLink.download = cleanNativeVideoName(selectedFile.name);
+    els.downloadLink.querySelector("span").textContent = "下载压缩视频";
+    els.resultPanel.classList.remove("is-hidden");
+    setProgress(1, "压缩完成");
+  } finally {
+    video.remove();
   }
-
-  const mimeType = pickNativeMimeType();
-  const recorder = new MediaRecorder(new MediaStream(tracks), {
-    mimeType,
-    videoBitsPerSecond: nativeVideoBitsPerSecond(),
-  });
-  const chunks = [];
-  recorder.addEventListener("dataavailable", (event) => {
-    if (event.data.size) chunks.push(event.data);
-  });
-
-  const stopped = new Promise((resolve, reject) => {
-    recorder.addEventListener("stop", resolve, { once: true });
-    recorder.addEventListener("error", () => reject(new Error("兼容模式压缩失败")), { once: true });
-  });
-
-  let drawing = true;
-  const draw = () => {
-    if (!drawing) return;
-    ctx.drawImage(video, 0, 0, width, height);
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-    setProgress(Math.min(0.95, video.currentTime / duration), "安卓兼容压缩中");
-    requestAnimationFrame(draw);
-  };
-
-  recorder.start(1000);
-  await video.play();
-  if (!els.stripAudio.checked) video.muted = false;
-  draw();
-  await new Promise((resolve) => {
-    video.addEventListener("ended", resolve, { once: true });
-  });
-  drawing = false;
-  recorder.stop();
-  await stopped;
-  tracks.forEach((track) => track.stop());
-  await audioContext?.close().catch(() => {});
-
-  const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-  outputUrl = URL.createObjectURL(blob);
-  els.beforeSize.textContent = formatSize(selectedFile.size);
-  els.afterSize.textContent = formatSize(blob.size);
-  const savedRatio = Math.max(0, 1 - blob.size / selectedFile.size);
-  els.savedSize.textContent = `${Math.round(savedRatio * 100)}%`;
-  els.downloadLink.href = outputUrl;
-  els.downloadLink.download = cleanNativeVideoName(selectedFile.name);
-  els.downloadLink.querySelector("span").textContent = "下载压缩视频";
-  els.resultPanel.classList.remove("is-hidden");
-  setProgress(1, "压缩完成");
 }
 
 async function compressVideo() {
@@ -558,7 +570,7 @@ async function compressVideo() {
   setProgress(0, "准备压缩");
 
   try {
-    if (isAndroidBrowser() && canUseNativeCompressor()) {
+    if (shouldUseNativeCompressor() && canUseNativeCompressor()) {
       await compressVideoNative();
       return;
     }
@@ -589,7 +601,7 @@ async function compressVideo() {
     await engine.deleteFile(outputName).catch(() => {});
   } catch (error) {
     console.error(error);
-    if (!isAndroidBrowser() && canUseNativeCompressor()) {
+    if (!shouldUseNativeCompressor() && canUseNativeCompressor()) {
       try {
         resetResult();
         await compressVideoNative();
