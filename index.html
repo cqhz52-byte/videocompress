@@ -18,7 +18,7 @@
           <div>
             <p class="eyebrow">Mobile Video Studio</p>
             <h1>视频压缩与字幕翻译</h1>
-            <p class="version-line">版本 v0.3.7</p>
+            <p class="version-line">版本 v0.3.8</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -207,7 +207,7 @@
 
             <button id="subtitleBtn" class="primary-button" type="button" disabled>
               <i data-lucide="sparkles" aria-hidden="true"></i>
-              <span>生成中文字幕</span>
+              <span>生成并压制字幕</span>
             </button>
           </aside>
         </div>
@@ -281,6 +281,22 @@
             </div>
           </div>
           <audio id="audioPreview" class="audio-preview" controls></audio>
+        </section>
+
+        <section id="burnResult" class="subtitle-result is-hidden" aria-label="字幕视频结果">
+          <div class="subtitle-head">
+            <div>
+              <p class="eyebrow">Burned Video</p>
+              <h2>中文字幕视频已生成</h2>
+            </div>
+            <div class="result-actions">
+              <a id="downloadBurnedVideo" class="download-button" href="#" download>
+                <i data-lucide="download" aria-hidden="true"></i>
+                <span>下载字幕视频</span>
+              </a>
+            </div>
+          </div>
+          <video id="burnedVideoPreview" class="preview burned-preview" controls playsinline></video>
         </section>
 
         <p id="errorBox" class="error-box is-hidden" role="alert"></p>

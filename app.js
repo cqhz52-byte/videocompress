@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.7";
+const APP_VERSION = "v0.3.8";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -59,6 +59,9 @@ const els = {
   audioResult: document.querySelector("#audioResult"),
   audioPreview: document.querySelector("#audioPreview"),
   downloadAudio: document.querySelector("#downloadAudio"),
+  burnResult: document.querySelector("#burnResult"),
+  burnedVideoPreview: document.querySelector("#burnedVideoPreview"),
+  downloadBurnedVideo: document.querySelector("#downloadBurnedVideo"),
   errorBox: document.querySelector("#errorBox"),
   updateToast: document.querySelector("#updateToast"),
   updateText: document.querySelector("#updateText"),
@@ -72,8 +75,11 @@ let outputUrl = null;
 let zhSrtUrl = null;
 let bilingualSrtUrl = null;
 let audioUrl = null;
+let burnedVideoUrl = null;
 let ffmpeg = null;
 let ffmpegReady = false;
+let speechPipeline = null;
+let speechModelLoading = null;
 
 window.lucide?.createIcons();
 
@@ -181,6 +187,11 @@ function cleanAacName(name) {
   return `${base || "video"}-audio.aac`;
 }
 
+function cleanBurnedVideoName(name) {
+  const base = name.replace(/\.[^.]+$/, "");
+  return `${base || "video"}-zh-subtitles.webm`;
+}
+
 function isMp4LikeFile(file) {
   return /\.(mp4|m4v|mov)$/i.test(file.name) || /mp4|quicktime/i.test(file.type);
 }
@@ -209,6 +220,17 @@ function loadClassicScript(src, globalName) {
 
 const AAC_SAMPLE_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
 const MP4_FAST_CHUNK_SIZE = 4 * 1024 * 1024;
+const TRANSFORMERS_JS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+const SPEECH_MODEL = "onnx-community/whisper-tiny";
+const whisperLangMap = {
+  en: "english",
+  zh: "chinese",
+  ja: "japanese",
+  ko: "korean",
+  fr: "french",
+  de: "german",
+  ru: "russian",
+};
 
 function parseAacObjectType(codec) {
   const match = String(codec || "").match(/mp4a\.40\.(\d+)/i);
@@ -366,7 +388,7 @@ function setCompressBusy(isBusy) {
 
 function setSubtitleBusy(isBusy) {
   els.subtitleBtn.disabled = isBusy || !selectedFile;
-  els.subtitleBtn.querySelector("span").textContent = isBusy ? "生成中" : "生成中文字幕";
+  els.subtitleBtn.querySelector("span").textContent = isBusy ? "生成中" : "生成并压制字幕";
 }
 
 function revokeUrl(url) {
@@ -384,9 +406,11 @@ function resetSubtitleResult() {
   revokeUrl(zhSrtUrl);
   revokeUrl(bilingualSrtUrl);
   revokeUrl(audioUrl);
+  revokeUrl(burnedVideoUrl);
   zhSrtUrl = null;
   bilingualSrtUrl = null;
   audioUrl = null;
+  burnedVideoUrl = null;
   els.subtitleResult.classList.add("is-hidden");
   els.subtitlePreview.value = "";
   els.downloadZhSrt.removeAttribute("href");
@@ -394,6 +418,9 @@ function resetSubtitleResult() {
   els.audioResult?.classList.add("is-hidden");
   els.audioPreview?.removeAttribute("src");
   els.downloadAudio?.removeAttribute("href");
+  els.burnResult?.classList.add("is-hidden");
+  els.burnedVideoPreview?.removeAttribute("src");
+  els.downloadBurnedVideo?.removeAttribute("href");
 }
 
 function setPreset(value) {
@@ -943,18 +970,15 @@ function showAudioExtractionResult(audioFile) {
   els.downloadAudio.href = audioUrl;
   els.downloadAudio.download = audioFile.name;
   els.audioResult.classList.remove("is-hidden");
-  els.subtitlePreview.value = [
-    "已在本机提取音频，没有上传到阿里云。",
-    `文件：${audioFile.name}`,
-    `大小：${formatSize(audioFile.size)}`,
-    "",
-    "下一步可以接本地语音转文字模型，再把文字发给 AI 润色和翻译，最后本机压制字幕。",
-  ].join("\n");
 }
 
 async function translateSegments(segments) {
   const settings = collectApiSettings();
   validateTranslateSettings(settings);
+
+  if (location.hostname.endsWith("github.io") || location.hostname === "127.0.0.1" || location.hostname === "localhost") {
+    return translateSegmentsInBrowser(segments, settings.deepseekKey);
+  }
 
   const response = await fetch("./api/translate", {
     method: "POST",
@@ -974,11 +998,353 @@ async function translateSegments(segments) {
   return data.segments;
 }
 
+function buildTranslateMessages(segments) {
+  const payload = segments.map((item, index) => ({
+    id: item.id || item.index || index + 1,
+    text: item.text || "",
+  }));
+
+  return [
+    {
+      role: "system",
+      content: "你是专业字幕翻译。把字幕翻译成自然、准确、简洁的中文，保留人名、数字和语气。只返回 JSON。",
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        task: "translate_subtitle_segments",
+        sourceLang: els.sourceLang.value,
+        targetLang: els.targetLang.value,
+        outputSchema: { items: [{ id: 1, translation: "中文字幕" }] },
+        rules: ["返回一个 JSON 对象，只有 items 字段", "保持 id 不变", "不要合并或拆分字幕", "空文本返回空翻译"],
+        segments: payload,
+      }),
+    },
+  ];
+}
+
+function parseModelJson(text) {
+  const trimmed = String(text || "").trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const match = trimmed.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("AI 没有返回可解析的 JSON");
+    return JSON.parse(match[0]);
+  }
+}
+
+async function translateSegmentsInBrowser(segments, apiKey) {
+  const normalized = normalizeSegments(segments);
+  const translated = [];
+  const batchSize = 40;
+
+  for (let i = 0; i < normalized.length; i += batchSize) {
+    const batch = normalized.slice(i, i + batchSize);
+    setProgress(0.52 + Math.min(0.24, (i / Math.max(1, normalized.length)) * 0.24), "AI 翻译中文字幕");
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: buildTranslateMessages(batch),
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+    }).catch((error) => {
+      throw new Error(`浏览器直连 DeepSeek 失败：${error.message || "可能被 CORS 拦截"}`);
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error?.message || data.message || "DeepSeek 翻译失败");
+    }
+
+    const parsed = parseModelJson(data.choices?.[0]?.message?.content || "{}");
+    const items = parsed.items || parsed.segments || [];
+    const byId = new Map(items.map((item) => [String(item.id), item.translation || item.text || ""]));
+    translated.push(
+      ...batch.map((item, index) => ({
+        ...item,
+        translation: byId.get(String(item.id || item.index || index + 1)) || "",
+      })),
+    );
+  }
+
+  return translated;
+}
+
+async function loadSpeechPipeline() {
+  if (speechPipeline) return speechPipeline;
+  if (speechModelLoading) return speechModelLoading;
+
+  speechModelLoading = (async () => {
+    setProgress(0.25, "加载本地语音模型");
+    const transformers = await withTimeout(
+      import(TRANSFORMERS_JS_URL),
+      120000,
+      "本地语音模型加载超时。首次加载模型较慢，请保持网络连接后重试。",
+    );
+    transformers.env.allowLocalModels = false;
+
+    speechPipeline = await transformers.pipeline("automatic-speech-recognition", SPEECH_MODEL, {
+      dtype: "q8",
+      progress_callback: (item) => {
+        if (item.status === "progress" && Number.isFinite(item.progress)) {
+          setProgress(0.25 + Math.min(0.12, item.progress / 100 * 0.12), "下载本地语音模型");
+        }
+      },
+    });
+    return speechPipeline;
+  })().finally(() => {
+    speechModelLoading = null;
+  });
+
+  return speechModelLoading;
+}
+
+async function decodeAudioToMono(audioFile) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) throw new Error("当前浏览器不支持音频解码。");
+
+  const context = new AudioContextClass({ sampleRate: 16000 });
+  try {
+    const buffer = await withTimeout(audioFile.arrayBuffer(), 30000, "读取音频文件超时");
+    const decoded = await withTimeout(context.decodeAudioData(buffer), 30000, "解码音频失败");
+    const length = decoded.length;
+    const channels = decoded.numberOfChannels;
+    const mono = new Float32Array(length);
+
+    for (let channel = 0; channel < channels; channel += 1) {
+      const data = decoded.getChannelData(channel);
+      for (let i = 0; i < length; i += 1) mono[i] += data[i] / channels;
+    }
+
+    if (decoded.sampleRate === 16000) return mono;
+    return resampleAudio(mono, decoded.sampleRate, 16000);
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
+function resampleAudio(input, sourceRate, targetRate) {
+  if (sourceRate === targetRate) return input;
+  const ratio = sourceRate / targetRate;
+  const newLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(newLength);
+
+  for (let i = 0; i < newLength; i += 1) {
+    const sourceIndex = i * ratio;
+    const left = Math.floor(sourceIndex);
+    const right = Math.min(input.length - 1, left + 1);
+    const weight = sourceIndex - left;
+    output[i] = input[left] * (1 - weight) + input[right] * weight;
+  }
+
+  return output;
+}
+
+function normalizeSpeechSegments(result) {
+  const chunks = Array.isArray(result?.chunks) ? result.chunks : [];
+  if (chunks.length) {
+    return chunks
+      .map((chunk, index) => {
+        const timestamp = chunk.timestamp || chunk.timestamps || [index * 3, index * 3 + 3];
+        const start = Number(timestamp[0] ?? index * 3);
+        const end = Number(timestamp[1] ?? start + 3);
+        return {
+          id: index + 1,
+          index: index + 1,
+          start,
+          end: end > start ? end : start + 3,
+          text: String(chunk.text || "").trim(),
+          translation: "",
+        };
+      })
+      .filter((item) => item.text);
+  }
+
+  const text = String(result?.text || "").trim();
+  return text ? [{ id: 1, index: 1, start: 0, end: 3, text, translation: "" }] : [];
+}
+
+async function transcribeAudioLocally(audioFile) {
+  const transcriber = await loadSpeechPipeline();
+  setProgress(0.38, "本机语音转文字");
+  const audio = await decodeAudioToMono(audioFile);
+  const result = await transcriber(audio, {
+    chunk_length_s: 30,
+    stride_length_s: 5,
+    return_timestamps: true,
+    language: whisperLangMap[els.sourceLang.value] || "english",
+    task: "transcribe",
+  });
+  const segments = normalizeSpeechSegments(result);
+  if (!segments.length) throw new Error("本机语音模型没有识别到文字。请确认视频有人声，或换更清晰的音频。");
+  return segments;
+}
+
+function subtitleTextForTime(segments, time) {
+  const current = segments.find((item) => time >= item.start && time <= item.end);
+  return current ? current.translation || current.text : "";
+}
+
+function wrapSubtitleText(ctx, text, maxWidth) {
+  const chars = Array.from(String(text || ""));
+  const lines = [];
+  let line = "";
+
+  chars.forEach((char) => {
+    const next = line + char;
+    if (ctx.measureText(next).width > maxWidth && line) {
+      lines.push(line.trim());
+      line = char;
+    } else {
+      line = next;
+    }
+  });
+
+  if (line.trim()) lines.push(line.trim());
+  return lines.slice(0, 3);
+}
+
+function drawSubtitleFrame(ctx, video, segments, width, height) {
+  ctx.drawImage(video, 0, 0, width, height);
+  const text = subtitleTextForTime(segments, video.currentTime);
+  if (!text) return;
+
+  const fontSize = Math.max(22, Math.round(width * 0.045));
+  const lineHeight = Math.round(fontSize * 1.35);
+  ctx.font = `700 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const maxTextWidth = width * 0.86;
+  const lines = wrapSubtitleText(ctx, text, maxTextWidth);
+  const boxHeight = lines.length * lineHeight + Math.round(fontSize * 0.9);
+  const boxY = height - boxHeight - Math.round(height * 0.08);
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
+  ctx.fillRect(Math.round(width * 0.06), boxY, Math.round(width * 0.88), boxHeight);
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+  ctx.lineWidth = Math.max(3, Math.round(fontSize * 0.12));
+  ctx.fillStyle = "#fff";
+
+  const firstY = boxY + boxHeight / 2 - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, index) => {
+    const y = firstY + index * lineHeight;
+    ctx.strokeText(line, width / 2, y);
+    ctx.fillText(line, width / 2, y);
+  });
+}
+
+async function burnSubtitlesToVideo(segments) {
+  if (!canUseNativeCompressor()) {
+    throw new Error("当前浏览器不支持本机字幕压制。请换 Chrome/Edge 或先下载 SRT。");
+  }
+
+  setProgress(0.78, "准备本机压制字幕");
+  const video = document.createElement("video");
+  video.src = sourceUrl || URL.createObjectURL(selectedFile);
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.setAttribute("playsinline", "");
+  video.setAttribute("webkit-playsinline", "");
+  video.style.position = "fixed";
+  video.style.width = "1px";
+  video.style.height = "1px";
+  video.style.opacity = "0";
+  video.style.pointerEvents = "none";
+  video.style.left = "-10px";
+  video.style.top = "-10px";
+  document.body.appendChild(video);
+
+  let audioContext = null;
+  let recorder = null;
+
+  try {
+    await waitForVideoEvent(video, "loadedmetadata");
+    const { width, height } = targetCanvasSize(video);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    const canvasStream = canvas.captureStream(24);
+    const tracks = [...canvasStream.getVideoTracks()];
+
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      audioContext = new AudioContextClass();
+      const source = audioContext.createMediaElementSource(video);
+      const destination = audioContext.createMediaStreamDestination();
+      source.connect(destination);
+      tracks.push(...destination.stream.getAudioTracks());
+    } catch (error) {
+      console.warn("Subtitle burn audio track unavailable", error);
+    }
+
+    const mimeType = pickNativeMimeType();
+    recorder = new MediaRecorder(new MediaStream(tracks), {
+      mimeType,
+      videoBitsPerSecond: nativeVideoBitsPerSecond(),
+    });
+
+    const chunks = [];
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data.size) chunks.push(event.data);
+    });
+    const stopped = new Promise((resolve, reject) => {
+      recorder.addEventListener("stop", resolve, { once: true });
+      recorder.addEventListener("error", () => reject(new Error("字幕压制失败")), { once: true });
+    });
+
+    let drawing = true;
+    const draw = () => {
+      if (!drawing) return;
+      drawSubtitleFrame(ctx, video, segments, width, height);
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+      setProgress(0.78 + Math.min(0.2, (video.currentTime / duration) * 0.2), "本机压制中文字幕");
+      requestAnimationFrame(draw);
+    };
+
+    recorder.start(1000);
+    await video.play();
+    draw();
+    await new Promise((resolve) => video.addEventListener("ended", resolve, { once: true }));
+    drawing = false;
+    recorder.stop();
+    await stopped;
+    tracks.forEach((track) => track.stop());
+
+    const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+    if (!blob.size) throw new Error("字幕视频生成失败。");
+    revokeUrl(burnedVideoUrl);
+    burnedVideoUrl = URL.createObjectURL(blob);
+    els.burnedVideoPreview.src = burnedVideoUrl;
+    els.downloadBurnedVideo.href = burnedVideoUrl;
+    els.downloadBurnedVideo.download = cleanBurnedVideoName(selectedFile.name);
+    els.burnResult.classList.remove("is-hidden");
+  } finally {
+    if (recorder?.state === "recording") recorder.stop();
+    await audioContext?.close().catch(() => {});
+    video.remove();
+  }
+}
+
 async function generateSpeechSubtitles() {
+  validateTranslateSettings(collectApiSettings());
   setProgress(0, "准备本地提取音频");
   const audioFile = await extractAudio();
   showAudioExtractionResult(audioFile);
-  setProgress(1, "音频提取完成");
+  const sourceSegments = await transcribeAudioLocally(audioFile);
+  const translated = await translateSegments(sourceSegments);
+  showSubtitleResult(translated);
+  await burnSubtitlesToVideo(normalizeSegments(translated));
+  setProgress(1, "字幕视频完成");
 }
 
 function waitForVideoSeek(video, time) {
