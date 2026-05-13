@@ -39,6 +39,14 @@ const els = {
   targetLang: document.querySelector("#targetLang"),
   ocrInterval: document.querySelector("#ocrInterval"),
   ocrCrop: document.querySelector("#ocrCrop"),
+  dashscopeKey: document.querySelector("#dashscopeKey"),
+  deepseekKey: document.querySelector("#deepseekKey"),
+  ossAccessKeyId: document.querySelector("#ossAccessKeyId"),
+  ossAccessKeySecret: document.querySelector("#ossAccessKeySecret"),
+  ossRegion: document.querySelector("#ossRegion"),
+  ossBucket: document.querySelector("#ossBucket"),
+  ossPrefix: document.querySelector("#ossPrefix"),
+  saveApiSettings: document.querySelector("#saveApiSettings"),
   progressPanel: document.querySelector("#progressPanel"),
   statusText: document.querySelector("#statusText"),
   progressText: document.querySelector("#progressText"),
@@ -64,6 +72,8 @@ let ffmpeg = null;
 let ffmpegReady = false;
 
 window.lucide?.createIcons();
+
+loadApiSettings();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -98,6 +108,63 @@ function cleanSubtitleName(name, suffix) {
 function showError(message) {
   els.errorBox.textContent = message;
   els.errorBox.classList.remove("is-hidden");
+}
+
+function apiSettingFields() {
+  return [
+    "dashscopeKey",
+    "deepseekKey",
+    "ossAccessKeyId",
+    "ossAccessKeySecret",
+    "ossRegion",
+    "ossBucket",
+    "ossPrefix",
+  ];
+}
+
+function loadApiSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("videoSubtitleApiSettings") || "{}");
+    apiSettingFields().forEach((key) => {
+      if (saved[key] && els[key]) els[key].value = saved[key];
+    });
+  } catch {
+    localStorage.removeItem("videoSubtitleApiSettings");
+  }
+}
+
+function collectApiSettings() {
+  const settings = {};
+  apiSettingFields().forEach((key) => {
+    settings[key] = els[key]?.value?.trim() || "";
+  });
+
+  if (els.saveApiSettings.checked) {
+    localStorage.setItem("videoSubtitleApiSettings", JSON.stringify(settings));
+  } else {
+    localStorage.removeItem("videoSubtitleApiSettings");
+  }
+
+  return settings;
+}
+
+function validateSpeechSettings(settings) {
+  const missing = [];
+  if (!settings.dashscopeKey) missing.push("阿里百炼 Key");
+  if (!settings.deepseekKey) missing.push("DeepSeek Key");
+  if (!settings.ossAccessKeyId) missing.push("OSS AccessKey ID");
+  if (!settings.ossAccessKeySecret) missing.push("OSS AccessKey Secret");
+  if (!settings.ossRegion) missing.push("OSS Region");
+  if (!settings.ossBucket) missing.push("OSS Bucket");
+  if (missing.length) {
+    throw new Error(`请先填写 API 设置：${missing.join("、")}`);
+  }
+}
+
+function validateTranslateSettings(settings) {
+  if (!settings.deepseekKey) {
+    throw new Error("请先填写 API 设置：DeepSeek Key");
+  }
 }
 
 function clearError() {
@@ -381,10 +448,14 @@ function showSubtitleResult(segments) {
 }
 
 async function postAudioForTranscription(audioFile) {
+  const settings = collectApiSettings();
+  validateSpeechSettings(settings);
+
   const form = new FormData();
   form.append("audio", audioFile);
   form.append("sourceLang", els.sourceLang.value);
   form.append("targetLang", els.targetLang.value);
+  Object.entries(settings).forEach(([key, value]) => form.append(key, value));
 
   const response = await fetch("./api/transcribe", {
     method: "POST",
@@ -399,6 +470,9 @@ async function postAudioForTranscription(audioFile) {
 }
 
 async function translateSegments(segments) {
+  const settings = collectApiSettings();
+  validateTranslateSettings(settings);
+
   const response = await fetch("./api/translate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -406,6 +480,7 @@ async function translateSegments(segments) {
       sourceLang: els.sourceLang.value,
       targetLang: els.targetLang.value,
       segments,
+      apiSettings: settings,
     }),
   });
 
