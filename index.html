@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0e7c66" />
+    <meta name="description" content="在手机浏览器本地压缩视频，不上传文件。" />
+    <title>手机视频压缩工具</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace" aria-label="视频压缩工具">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Local Video Compressor</p>
+            <h1>手机视频压缩</h1>
+          </div>
+          <div class="privacy-pill">
+            <i data-lucide="shield-check" aria-hidden="true"></i>
+            <span>本地处理</span>
+          </div>
+        </header>
+
+        <div class="main-grid">
+          <section class="drop-panel" aria-label="选择视频">
+            <input id="fileInput" type="file" accept="video/*" hidden />
+            <button id="dropZone" class="drop-zone" type="button">
+              <span class="drop-icon">
+                <i data-lucide="video" aria-hidden="true"></i>
+              </span>
+              <span class="drop-title">选择或拖入手机视频</span>
+              <span class="drop-subtitle">支持 MP4、MOV、WebM 等常见格式</span>
+            </button>
+
+            <div id="fileSummary" class="file-summary is-hidden">
+              <div>
+                <p id="fileName" class="file-name"></p>
+                <p id="fileMeta" class="muted"></p>
+              </div>
+              <button id="clearFile" class="icon-button" type="button" aria-label="移除视频" title="移除视频">
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <video id="preview" class="preview is-hidden" controls muted playsinline></video>
+          </section>
+
+          <aside class="controls" aria-label="压缩设置">
+            <div class="control-block">
+              <div class="block-heading">
+                <i data-lucide="gauge" aria-hidden="true"></i>
+                <h2>压缩档位</h2>
+              </div>
+              <div class="preset-grid" role="radiogroup" aria-label="压缩档位">
+                <label class="preset is-active">
+                  <input type="radio" name="preset" value="small" checked />
+                  <span>更小</span>
+                  <small>适合微信发送</small>
+                </label>
+                <label class="preset">
+                  <input type="radio" name="preset" value="balanced" />
+                  <span>均衡</span>
+                  <small>清晰和体积兼顾</small>
+                </label>
+                <label class="preset">
+                  <input type="radio" name="preset" value="clear" />
+                  <span>更清晰</span>
+                  <small>保留更多细节</small>
+                </label>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <label for="resolution">最长边</label>
+              <select id="resolution">
+                <option value="720">720p</option>
+                <option value="1080" selected>1080p</option>
+                <option value="1440">1440p</option>
+                <option value="source">保持原尺寸</option>
+              </select>
+            </div>
+
+            <div class="control-row">
+              <label for="quality">画质</label>
+              <div class="range-wrap">
+                <input id="quality" type="range" min="23" max="36" value="30" />
+                <output id="qualityLabel" for="quality">普通</output>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <label for="stripAudio">音频</label>
+              <label class="switch">
+                <input id="stripAudio" type="checkbox" />
+                <span>去除声音</span>
+              </label>
+            </div>
+
+            <button id="compressBtn" class="primary-button" type="button" disabled>
+              <i data-lucide="minimize-2" aria-hidden="true"></i>
+              <span>开始压缩</span>
+            </button>
+
+            <div id="progressPanel" class="progress-panel is-hidden" aria-live="polite">
+              <div class="progress-meta">
+                <span id="statusText">准备中</span>
+                <span id="progressText">0%</span>
+              </div>
+              <div class="progress-track">
+                <div id="progressBar" class="progress-bar"></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <section id="resultPanel" class="result-panel is-hidden" aria-label="压缩结果">
+          <div>
+            <p class="eyebrow">Result</p>
+            <h2>压缩完成</h2>
+          </div>
+          <div class="stats">
+            <div>
+              <span>原大小</span>
+              <strong id="beforeSize">-</strong>
+            </div>
+            <div>
+              <span>压缩后</span>
+              <strong id="afterSize">-</strong>
+            </div>
+            <div>
+              <span>节省</span>
+              <strong id="savedSize">-</strong>
+            </div>
+          </div>
+          <a id="downloadLink" class="download-button" href="#" download>
+            <i data-lucide="download" aria-hidden="true"></i>
+            <span>下载压缩视频</span>
+          </a>
+        </section>
+
+        <p id="errorBox" class="error-box is-hidden" role="alert"></p>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
