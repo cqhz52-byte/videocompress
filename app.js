@@ -1,5 +1,4 @@
-import { FFmpeg } from "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js";
-import { fetchFile, toBlobURL } from "https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js";
+import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -93,6 +92,10 @@ function formatSize(bytes) {
     unit += 1;
   }
   return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+async function fetchFile(file) {
+  return new Uint8Array(await file.arrayBuffer());
 }
 
 function cleanVideoName(name) {
@@ -297,12 +300,9 @@ async function getFFmpeg() {
   }
 
   setProgress(0.04, "加载视频引擎");
-  const ffmpegBaseURL = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm";
-  const coreBaseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
   await ffmpeg.load({
-    classWorkerURL: await toBlobURL(`${ffmpegBaseURL}/worker.js`, "text/javascript"),
-    coreURL: await toBlobURL(`${coreBaseURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${coreBaseURL}/ffmpeg-core.wasm`, "application/wasm"),
+    coreURL: new URL("./vendor/ffmpeg/ffmpeg-core.js", import.meta.url).href,
+    wasmURL: new URL("./vendor/ffmpeg/ffmpeg-core.wasm", import.meta.url).href,
   });
   ffmpegReady = true;
   return ffmpeg;
