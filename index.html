@@ -18,7 +18,7 @@
           <div>
             <p class="eyebrow">Mobile Video Studio</p>
             <h1>视频压缩与字幕翻译</h1>
-            <p class="version-line">版本 v0.3.11</p>
+            <p class="version-line">版本 v0.3.12</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -58,7 +58,10 @@
               </button>
             </div>
 
-            <video id="preview" class="preview is-hidden" controls muted playsinline></video>
+            <div id="previewFrame" class="preview-frame is-hidden">
+              <video id="preview" class="preview" controls muted playsinline></video>
+              <div id="subtitleStylePreview" class="subtitle-style-preview is-bottom" aria-hidden="true">字幕样式预览</div>
+            </div>
           </section>
 
           <aside id="compressPanel" class="controls panel is-active" aria-label="压缩设置">

@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.11";
+const APP_VERSION = "v0.3.12";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -25,7 +25,9 @@ const els = {
   fileName: document.querySelector("#fileName"),
   fileMeta: document.querySelector("#fileMeta"),
   clearFile: document.querySelector("#clearFile"),
+  previewFrame: document.querySelector("#previewFrame"),
   preview: document.querySelector("#preview"),
+  subtitleStylePreview: document.querySelector("#subtitleStylePreview"),
   tabs: document.querySelectorAll(".tab"),
   compressPanel: document.querySelector("#compressPanel"),
   subtitlePanel: document.querySelector("#subtitlePanel"),
@@ -602,6 +604,7 @@ function updateSubtitleStyleLabels() {
   if (els.subtitleBgOpacityLabel) {
     els.subtitleBgOpacityLabel.value = `${els.subtitleBgOpacity.value}%`;
   }
+  updateSubtitleStylePreview();
 }
 
 function subtitleStyleSettings() {
@@ -612,6 +615,22 @@ function subtitleStyleSettings() {
     background: els.subtitleBg?.value || "#000000",
     backgroundOpacity: Number(els.subtitleBgOpacity?.value || 58) / 100,
   };
+}
+
+function subtitlePreviewText() {
+  const first = currentSubtitleSegments.find((item) => item.translation || item.text);
+  return first?.translation || first?.text || "字幕样式预览";
+}
+
+function updateSubtitleStylePreview() {
+  if (!els.subtitleStylePreview) return;
+  const style = subtitleStyleSettings();
+  els.subtitleStylePreview.textContent = subtitlePreviewText();
+  els.subtitleStylePreview.classList.remove("is-top", "is-middle", "is-bottom");
+  els.subtitleStylePreview.classList.add(`is-${style.position}`);
+  els.subtitleStylePreview.style.color = style.color;
+  els.subtitleStylePreview.style.backgroundColor = hexToRgba(style.background, style.backgroundOpacity);
+  els.subtitleStylePreview.style.fontSize = `${Math.round(18 * style.fontScale)}px`;
 }
 
 function currentSubtitleMode() {
@@ -638,7 +657,9 @@ function setSelectedFile(file) {
   els.fileMeta.textContent = `${formatSize(file.size)} · ${file.type || "video"}`;
   els.fileSummary.classList.remove("is-hidden");
   els.preview.src = sourceUrl;
+  els.previewFrame?.classList.remove("is-hidden");
   els.preview.classList.remove("is-hidden");
+  updateSubtitleStylePreview();
   els.compressBtn.disabled = false;
   els.subtitleBtn.disabled = false;
 }
@@ -651,6 +672,7 @@ function clearFile() {
   resetSubtitleResult();
   els.fileInput.value = "";
   els.preview.removeAttribute("src");
+  els.previewFrame?.classList.add("is-hidden");
   els.preview.classList.add("is-hidden");
   els.fileSummary.classList.add("is-hidden");
   els.progressPanel.classList.add("is-hidden");
@@ -1024,7 +1046,6 @@ async function extractAudioNative() {
 
   let audioContext = null;
   let recorder = null;
-  let hasAudioTrack = false;
 
   try {
     await waitForVideoEvent(video, "loadedmetadata");
@@ -1171,6 +1192,7 @@ function showSubtitleResult(segments) {
   zhSrtUrl = downloadText(zhSrt, cleanSubtitleName(selectedFile.name, "zh"), els.downloadZhSrt);
   bilingualSrtUrl = downloadText(bilingualSrt, cleanSubtitleName(selectedFile.name, "bilingual"), els.downloadBilingualSrt);
   els.subtitlePreview.value = bilingualSrt;
+  updateSubtitleStylePreview();
   if (els.applySubtitleEdits) els.applySubtitleEdits.disabled = false;
   if (els.reburnSubtitles) els.reburnSubtitles.disabled = false;
   els.subtitleResult.classList.remove("is-hidden");
@@ -1186,6 +1208,7 @@ function applySubtitleEdits() {
   zhSrtUrl = downloadText(buildSrt(parsed, "translated"), cleanSubtitleName(selectedFile.name, "zh"), els.downloadZhSrt);
   bilingualSrtUrl = downloadText(buildSrt(parsed, "bilingual"), cleanSubtitleName(selectedFile.name, "bilingual"), els.downloadBilingualSrt);
   els.subtitlePreview.value = buildSrt(parsed, "bilingual");
+  updateSubtitleStylePreview();
   setProgress(1, "字幕修改已应用");
 }
 
@@ -1552,6 +1575,7 @@ async function burnSubtitlesToVideo(segments) {
 
   let audioContext = null;
   let recorder = null;
+  let hasAudioTrack = false;
 
   try {
     await waitForVideoEvent(video, "loadedmetadata");
@@ -1840,7 +1864,18 @@ els.applySubtitleEdits?.addEventListener("click", applySubtitleEditsFromButton);
 els.reburnSubtitles?.addEventListener("click", reburnEditedSubtitles);
 els.quality.addEventListener("input", updateQualityLabel);
 els.subtitleFontSize?.addEventListener("input", updateSubtitleStyleLabels);
+els.subtitlePosition?.addEventListener("change", updateSubtitleStylePreview);
+els.subtitleColor?.addEventListener("input", updateSubtitleStylePreview);
+els.subtitleBg?.addEventListener("input", updateSubtitleStylePreview);
 els.subtitleBgOpacity?.addEventListener("input", updateSubtitleStyleLabels);
+els.subtitlePreview?.addEventListener("input", () => {
+  try {
+    currentSubtitleSegments = normalizeSegments(parseEditableSrt(els.subtitlePreview.value));
+    updateSubtitleStylePreview();
+  } catch {
+    updateSubtitleStylePreview();
+  }
+});
 
 document.querySelectorAll('input[name="preset"]').forEach((input) => {
   input.addEventListener("change", () => setPreset(input.value));
