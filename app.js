@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.16";
+const APP_VERSION = "v0.3.17";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -38,6 +38,9 @@ const els = {
   compressMode: document.querySelector("#compressMode"),
   compressBtn: document.querySelector("#compressBtn"),
   subtitleBtn: document.querySelector("#subtitleBtn"),
+  subtitleSettingsToggle: document.querySelector("#subtitleSettingsToggle"),
+  subtitleSettingsSheet: document.querySelector("#subtitleSettingsSheet"),
+  closeSubtitleSettings: document.querySelector("#closeSubtitleSettings"),
   ocrOptions: document.querySelector("#ocrOptions"),
   sourceLang: document.querySelector("#sourceLang"),
   targetLang: document.querySelector("#targetLang"),
@@ -735,6 +738,16 @@ function switchTab(tabName) {
   if (tabName === "subtitle") {
     els.progressPanel.classList.add("is-hidden");
   }
+}
+
+function openSubtitleSettings() {
+  els.subtitleSettingsSheet?.classList.remove("is-hidden");
+  document.body.classList.add("has-modal");
+}
+
+function closeSubtitleSettings() {
+  els.subtitleSettingsSheet?.classList.add("is-hidden");
+  document.body.classList.remove("has-modal");
 }
 
 async function getFFmpeg() {
@@ -2041,6 +2054,11 @@ els.fileInput.addEventListener("change", (event) => setSelectedFile(event.target
 els.clearFile.addEventListener("click", clearFile);
 els.compressBtn.addEventListener("click", compressVideo);
 els.subtitleBtn.addEventListener("click", generateSubtitles);
+els.subtitleSettingsToggle?.addEventListener("click", openSubtitleSettings);
+els.closeSubtitleSettings?.addEventListener("click", closeSubtitleSettings);
+els.subtitleSettingsSheet?.addEventListener("click", (event) => {
+  if (event.target === els.subtitleSettingsSheet) closeSubtitleSettings();
+});
 els.shareCompressedVideo?.addEventListener("click", shareCompressedVideo);
 els.shareBurnedVideo?.addEventListener("click", shareBurnedVideo);
 els.applySubtitleEdits?.addEventListener("click", applySubtitleEditsFromButton);
@@ -2057,6 +2075,12 @@ els.subtitlePreview?.addEventListener("input", () => {
     updateSubtitleStylePreview();
   } catch {
     updateSubtitleStylePreview();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.subtitleSettingsSheet?.classList.contains("is-hidden")) {
+    closeSubtitleSettings();
   }
 });
 

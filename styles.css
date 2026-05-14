@@ -29,6 +29,10 @@ body {
   color: var(--ink);
 }
 
+body.has-modal {
+  overflow: hidden;
+}
+
 button,
 input,
 select {
@@ -419,6 +423,100 @@ output {
   border: 0;
   border-radius: 8px;
   cursor: pointer;
+}
+
+.settings-button {
+  width: 100%;
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-button > i:first-child,
+.settings-button > svg:first-child {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.settings-button span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-button strong {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.settings-button small {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.settings-button > i:last-child,
+.settings-button > svg:last-child {
+  color: var(--muted);
+}
+
+.settings-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  padding: 16px;
+  background: rgba(21, 32, 46, 0.42);
+}
+
+.settings-card {
+  width: min(520px, 100%);
+  max-height: min(760px, calc(100vh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 22px 70px rgba(21, 32, 46, 0.32);
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-card-body {
+  overflow: auto;
+  padding: 16px;
+  overscroll-behavior: contain;
+}
+
+.settings-card-body .control-row:last-child,
+.settings-card-body .api-settings:last-child {
+  margin-bottom: 0;
 }
 
 .primary-button {
