@@ -29,10 +29,6 @@ body {
   color: var(--ink);
 }
 
-body.has-modal {
-  overflow: hidden;
-}
-
 button,
 input,
 select {
@@ -65,15 +61,23 @@ select {
 }
 
 .brand-lockup {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
   min-width: 0;
 }
 
 .brand-logo {
   display: block;
-  width: min(230px, 58vw);
+  width: min(154px, 38vw);
   height: auto;
-  margin: 0 0 14px;
+  margin: 0;
   mix-blend-mode: multiply;
+}
+
+.brand-copy {
+  min-width: 0;
+  margin-top: 16px;
 }
 
 .eyebrow {
@@ -478,25 +482,19 @@ output {
 }
 
 .settings-sheet {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  align-items: end;
-  justify-items: center;
-  padding: 16px;
-  background: rgba(21, 32, 46, 0.42);
+  margin: 0 0 14px;
 }
 
 .settings-card {
-  width: min(520px, 100%);
-  max-height: min(760px, calc(100vh - 32px));
+  width: 100%;
+  max-height: min(620px, calc(100vh - 180px));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 22px 70px rgba(21, 32, 46, 0.32);
+  background: #fbfcfe;
+  box-shadow: none;
 }
 
 .settings-card-head {
@@ -1018,6 +1016,18 @@ output {
     flex-direction: column;
   }
 
+  .brand-lockup {
+    gap: 12px;
+  }
+
+  .brand-logo {
+    width: min(132px, 42vw);
+  }
+
+  .brand-copy {
+    margin-top: 12px;
+  }
+
   .main-grid {
     grid-template-columns: 1fr;
   }
@@ -1048,7 +1058,15 @@ output {
 
 @media (max-width: 520px) {
   h1 {
-    font-size: 34px;
+    font-size: 32px;
+  }
+
+  .brand-logo {
+    width: min(118px, 40vw);
+  }
+
+  .brand-copy {
+    margin-top: 10px;
   }
 
   .control-row {

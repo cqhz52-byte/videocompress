@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.18";
+const APP_VERSION = "v0.3.19";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -743,12 +743,10 @@ function switchTab(tabName) {
 
 function openSubtitleSettings() {
   els.subtitleSettingsSheet?.classList.remove("is-hidden");
-  document.body.classList.add("has-modal");
 }
 
 function closeSubtitleSettings() {
   els.subtitleSettingsSheet?.classList.add("is-hidden");
-  document.body.classList.remove("has-modal");
 }
 
 async function getFFmpeg() {
