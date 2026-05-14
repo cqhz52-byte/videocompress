@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.17";
+const APP_VERSION = "v0.3.18";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -46,6 +46,7 @@ const els = {
   targetLang: document.querySelector("#targetLang"),
   ocrInterval: document.querySelector("#ocrInterval"),
   ocrCrop: document.querySelector("#ocrCrop"),
+  ocrTimingLead: document.querySelector("#ocrTimingLead"),
   subtitleFontSize: document.querySelector("#subtitleFontSize"),
   subtitleFontSizeLabel: document.querySelector("#subtitleFontSizeLabel"),
   subtitlePositionY: document.querySelector("#subtitlePositionY"),
@@ -1854,6 +1855,20 @@ function mergeOcrSegments(rawItems, interval) {
   return segments.filter((item) => item.text.length > 1);
 }
 
+function ocrTimingLeadSeconds() {
+  const value = Number(els.ocrTimingLead?.value || 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function applyOcrTimingLead(segments, leadSeconds) {
+  if (!leadSeconds) return normalizeSegments(segments);
+  return normalizeSegments(segments).map((item) => {
+    const start = Math.max(0, item.start - leadSeconds);
+    const end = Math.max(start + 0.2, item.end - leadSeconds);
+    return { ...item, start, end };
+  });
+}
+
 function canvasSignature(canvas, sampleCanvas) {
   sampleCanvas.width = OCR_SIGNATURE_WIDTH;
   sampleCanvas.height = OCR_SIGNATURE_HEIGHT;
@@ -1956,8 +1971,9 @@ async function generateOcrSubtitles() {
   updateTaskStep("ocr", "done", `已识别 ${sourceSegments.length} 条画面字幕，复用 ${reusedFrames} 帧`);
   setProgress(0.78, "AI 清理硬字幕");
   updateTaskStep("clean", "active", "去重并过滤 logo、水印、固定画面文字");
-  const cleanedSegments = await cleanupOcrSegmentsWithAI(sourceSegments);
-  updateTaskStep("clean", "done", `保留 ${cleanedSegments.length} 条有效字幕`);
+  const cleanedSegments = applyOcrTimingLead(await cleanupOcrSegmentsWithAI(sourceSegments), ocrTimingLeadSeconds());
+  const timingNote = ocrTimingLeadSeconds() ? `，已提前 ${ocrTimingLeadSeconds()} 秒` : "";
+  updateTaskStep("clean", "done", `保留 ${cleanedSegments.length} 条有效字幕${timingNote}`);
   setProgress(0.86, "翻译画面字幕");
   updateTaskStep("translate", "active", "准备发送文字给 AI");
   const translated = await translateSegments(cleanedSegments, {
