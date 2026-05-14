@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.19";
+const APP_VERSION = "v0.3.20";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -28,6 +28,7 @@ const els = {
   previewFrame: document.querySelector("#previewFrame"),
   preview: document.querySelector("#preview"),
   subtitleStylePreview: document.querySelector("#subtitleStylePreview"),
+  subtitleStyleControls: document.querySelector("#subtitleStyleControls"),
   tabs: document.querySelectorAll(".tab"),
   compressPanel: document.querySelector("#compressPanel"),
   subtitlePanel: document.querySelector("#subtitlePanel"),
@@ -683,6 +684,13 @@ function updateSubtitleStylePreview() {
   els.subtitleStylePreview.style.fontSize = `${Math.round(18 * style.fontScale)}px`;
 }
 
+function focusSubtitlePreview() {
+  if (!selectedFile || !els.subtitlePanel.classList.contains("is-active") || !els.previewFrame) return;
+  window.setTimeout(() => {
+    els.previewFrame.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 80);
+}
+
 function currentSubtitleMode() {
   return document.querySelector('input[name="subtitleMode"]:checked')?.value || "speech";
 }
@@ -712,6 +720,8 @@ function setSelectedFile(file) {
   updateSubtitleStylePreview();
   els.compressBtn.disabled = false;
   els.subtitleBtn.disabled = false;
+  els.subtitleStyleControls?.classList.toggle("is-hidden", !els.subtitlePanel.classList.contains("is-active"));
+  focusSubtitlePreview();
 }
 
 function clearFile() {
@@ -727,6 +737,7 @@ function clearFile() {
   els.fileSummary.classList.add("is-hidden");
   els.progressPanel.classList.add("is-hidden");
   els.floatingStatus?.classList.add("is-hidden");
+  els.subtitleStyleControls?.classList.add("is-hidden");
   els.compressBtn.disabled = true;
   els.subtitleBtn.disabled = true;
   clearError();
@@ -736,8 +747,10 @@ function switchTab(tabName) {
   els.tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabName));
   els.compressPanel.classList.toggle("is-active", tabName === "compress");
   els.subtitlePanel.classList.toggle("is-active", tabName === "subtitle");
+  els.subtitleStyleControls?.classList.toggle("is-hidden", tabName !== "subtitle" || !selectedFile);
   if (tabName === "subtitle") {
     els.progressPanel.classList.add("is-hidden");
+    focusSubtitlePreview();
   }
 }
 

@@ -20,7 +20,7 @@
             <div class="brand-copy">
               <p class="eyebrow">Mobile Video Studio</p>
               <h1>视频工具</h1>
-              <p class="version-line">版本 v0.3.19</p>
+              <p class="version-line">版本 v0.3.20</p>
             </div>
           </div>
           <div class="privacy-pill">
@@ -66,6 +66,46 @@
               <video id="preview" class="preview" controls muted playsinline></video>
               <div id="subtitleStylePreview" class="subtitle-style-preview" aria-hidden="true">字幕样式预览</div>
             </div>
+
+            <section id="subtitleStyleControls" class="subtitle-style-controls is-hidden" aria-label="字幕样式快捷设置">
+              <div class="block-heading">
+                <i data-lucide="palette" aria-hidden="true"></i>
+                <h2>字幕样式</h2>
+              </div>
+              <div class="field-stack">
+                <label>
+                  <span>字体大小</span>
+                  <div class="range-wrap">
+                    <input id="subtitleFontSize" type="range" min="70" max="150" value="100" />
+                    <output id="subtitleFontSizeLabel" for="subtitleFontSize">100%</output>
+                  </div>
+                </label>
+                <label>
+                  <span>垂直位置</span>
+                  <div class="range-wrap">
+                    <input id="subtitlePositionY" type="range" min="5" max="95" value="82" />
+                    <output id="subtitlePositionYLabel" for="subtitlePositionY">82%</output>
+                  </div>
+                </label>
+                <div class="split-fields">
+                  <label>
+                    <span>文字颜色</span>
+                    <input id="subtitleColor" type="color" value="#ffffff" />
+                  </label>
+                  <label>
+                    <span>背景颜色</span>
+                    <input id="subtitleBg" type="color" value="#000000" />
+                  </label>
+                </div>
+                <label>
+                  <span>背景透明度</span>
+                  <div class="range-wrap">
+                    <input id="subtitleBgOpacity" type="range" min="0" max="85" value="58" />
+                    <output id="subtitleBgOpacityLabel" for="subtitleBgOpacity">58%</output>
+                  </div>
+                </label>
+              </div>
+            </section>
           </section>
 
           <aside id="compressPanel" class="controls panel is-active" aria-label="压缩设置">
@@ -139,7 +179,7 @@
               <i data-lucide="sliders-horizontal" aria-hidden="true"></i>
               <span>
                 <strong>字幕设置</strong>
-                <small>字幕来源、语言、字体、翻译 Key</small>
+                <small>字幕来源、语言、OCR、翻译 Key</small>
               </span>
               <i data-lucide="chevron-right" aria-hidden="true"></i>
             </button>
@@ -228,46 +268,6 @@
                 </select>
               </div>
             </div>
-
-            <details class="api-settings" open>
-              <summary>
-                <i data-lucide="palette" aria-hidden="true"></i>
-                <span>字幕样式</span>
-              </summary>
-              <div class="field-stack">
-                <label>
-                  <span>字体大小</span>
-                  <div class="range-wrap">
-                    <input id="subtitleFontSize" type="range" min="70" max="150" value="100" />
-                    <output id="subtitleFontSizeLabel" for="subtitleFontSize">100%</output>
-                  </div>
-                </label>
-                <label>
-                  <span>垂直位置</span>
-                  <div class="range-wrap">
-                    <input id="subtitlePositionY" type="range" min="5" max="95" value="82" />
-                    <output id="subtitlePositionYLabel" for="subtitlePositionY">82%</output>
-                  </div>
-                </label>
-                <div class="split-fields">
-                  <label>
-                    <span>文字颜色</span>
-                    <input id="subtitleColor" type="color" value="#ffffff" />
-                  </label>
-                  <label>
-                    <span>背景颜色</span>
-                    <input id="subtitleBg" type="color" value="#000000" />
-                  </label>
-                </div>
-                <label>
-                  <span>背景透明度</span>
-                  <div class="range-wrap">
-                    <input id="subtitleBgOpacity" type="range" min="0" max="85" value="58" />
-                    <output id="subtitleBgOpacityLabel" for="subtitleBgOpacity">58%</output>
-                  </div>
-                </label>
-              </div>
-            </details>
 
             <details class="api-settings">
               <summary>
