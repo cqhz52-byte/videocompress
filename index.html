@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0e7c66" />
     <meta name="description" content="在手机浏览器压缩视频，并生成翻译字幕。" />
-    <title>手机视频压缩与字幕翻译</title>
+    <title>视频工具</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/icon.svg" />
@@ -13,12 +13,13 @@
   </head>
   <body>
     <main class="shell">
-      <section class="workspace" aria-label="手机视频工具">
+      <section class="workspace" aria-label="视频工具">
         <header class="topbar">
-          <div>
+          <div class="brand-lockup">
+            <img class="brand-logo" src="./icons/curaway-logo.png" alt="Curaway" />
             <p class="eyebrow">Mobile Video Studio</p>
-            <h1>视频压缩与字幕翻译</h1>
-            <p class="version-line">版本 v0.3.14</p>
+            <h1>视频工具</h1>
+            <p class="version-line">版本 v0.3.15</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -55,6 +56,7 @@
               </div>
               <button id="clearFile" class="icon-button" type="button" aria-label="移除视频" title="移除视频">
                 <i data-lucide="x" aria-hidden="true"></i>
+                <span>移除</span>
               </button>
             </div>
 
@@ -285,10 +287,16 @@
               <strong id="savedSize">-</strong>
             </div>
           </div>
-          <a id="downloadLink" class="download-button" href="#" download>
-            <i data-lucide="download" aria-hidden="true"></i>
-            <span>下载压缩视频</span>
-          </a>
+          <div class="result-actions">
+            <button id="shareCompressedVideo" class="download-button secondary" type="button" disabled>
+              <i data-lucide="share-2" aria-hidden="true"></i>
+              <span>分享视频</span>
+            </button>
+            <a id="downloadLink" class="download-button" href="#" download>
+              <i data-lucide="download" aria-hidden="true"></i>
+              <span>下载压缩视频</span>
+            </a>
+          </div>
         </section>
 
         <section id="subtitleResult" class="subtitle-result is-hidden" aria-label="字幕结果">
@@ -363,8 +371,14 @@
 
     <div id="updateToast" class="update-toast is-hidden" role="status">
       <span id="updateText">发现新版本</span>
-      <button id="reloadUpdate" type="button">立即更新</button>
-      <button id="clearCacheUpdate" type="button" class="ghost-update">清除缓存</button>
+      <button id="reloadUpdate" type="button">
+        <i data-lucide="refresh-cw" aria-hidden="true"></i>
+        <span>立即更新</span>
+      </button>
+      <button id="clearCacheUpdate" type="button" class="ghost-update">
+        <i data-lucide="trash-2" aria-hidden="true"></i>
+        <span>清除缓存</span>
+      </button>
     </div>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>

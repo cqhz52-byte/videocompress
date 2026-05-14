@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.14";
+const APP_VERSION = "v0.3.15";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -63,6 +63,7 @@ const els = {
   afterSize: document.querySelector("#afterSize"),
   savedSize: document.querySelector("#savedSize"),
   downloadLink: document.querySelector("#downloadLink"),
+  shareCompressedVideo: document.querySelector("#shareCompressedVideo"),
   subtitleResult: document.querySelector("#subtitleResult"),
   subtitlePreview: document.querySelector("#subtitlePreview"),
   downloadZhSrt: document.querySelector("#downloadZhSrt"),
@@ -87,6 +88,7 @@ const els = {
 let selectedFile = null;
 let sourceUrl = null;
 let outputUrl = null;
+let compressedVideoFile = null;
 let zhSrtUrl = null;
 let bilingualSrtUrl = null;
 let audioUrl = null;
@@ -552,8 +554,31 @@ function revokeUrl(url) {
 function resetResult() {
   revokeUrl(outputUrl);
   outputUrl = null;
+  compressedVideoFile = null;
   els.resultPanel.classList.add("is-hidden");
   els.downloadLink.removeAttribute("href");
+  if (els.shareCompressedVideo) els.shareCompressedVideo.disabled = true;
+}
+
+function showCompressionResult(blob, fileName) {
+  outputUrl = URL.createObjectURL(blob);
+  compressedVideoFile = new File([blob], fileName, { type: blob.type || "video/mp4" });
+
+  els.beforeSize.textContent = formatSize(selectedFile.size);
+  els.afterSize.textContent = formatSize(blob.size);
+  const savedRatio = Math.max(0, 1 - blob.size / selectedFile.size);
+  els.savedSize.textContent = `${Math.round(savedRatio * 100)}%`;
+  els.downloadLink.href = outputUrl;
+  els.downloadLink.download = fileName;
+  els.downloadLink.querySelector("span").textContent = "下载压缩视频";
+
+  if (els.shareCompressedVideo) {
+    const canShareFile = Boolean(navigator.share && navigator.canShare?.({ files: [compressedVideoFile] }));
+    els.shareCompressedVideo.disabled = false;
+    els.shareCompressedVideo.title = canShareFile ? "调用手机系统分享" : "当前浏览器不支持直接分享文件，点击会先下载视频";
+  }
+
+  els.resultPanel.classList.remove("is-hidden");
 }
 
 function resetSubtitleResult() {
@@ -831,15 +856,7 @@ async function compressVideoNative() {
     await audioContext?.close().catch(() => {});
 
     const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-    outputUrl = URL.createObjectURL(blob);
-    els.beforeSize.textContent = formatSize(selectedFile.size);
-    els.afterSize.textContent = formatSize(blob.size);
-    const savedRatio = Math.max(0, 1 - blob.size / selectedFile.size);
-    els.savedSize.textContent = `${Math.round(savedRatio * 100)}%`;
-    els.downloadLink.href = outputUrl;
-    els.downloadLink.download = cleanNativeVideoName(selectedFile.name);
-    els.downloadLink.querySelector("span").textContent = "下载压缩视频";
-    els.resultPanel.classList.remove("is-hidden");
+    showCompressionResult(blob, cleanNativeVideoName(selectedFile.name));
     setProgress(1, "压缩完成");
   } finally {
     video.remove();
@@ -871,15 +888,7 @@ async function compressVideo() {
 
     const data = await engine.readFile(outputName);
     const blob = new Blob([data.buffer], { type: "video/mp4" });
-    outputUrl = URL.createObjectURL(blob);
-
-    els.beforeSize.textContent = formatSize(selectedFile.size);
-    els.afterSize.textContent = formatSize(blob.size);
-    const savedRatio = Math.max(0, 1 - blob.size / selectedFile.size);
-    els.savedSize.textContent = `${Math.round(savedRatio * 100)}%`;
-    els.downloadLink.href = outputUrl;
-    els.downloadLink.download = cleanVideoName(selectedFile.name);
-    els.resultPanel.classList.remove("is-hidden");
+    showCompressionResult(blob, cleanVideoName(selectedFile.name));
     setProgress(1, "压缩完成");
 
     await engine.deleteFile(inputName).catch(() => {});
@@ -1986,6 +1995,32 @@ async function shareBurnedVideo() {
   }
 }
 
+async function shareCompressedVideo() {
+  if (!compressedVideoFile) {
+    showError("请先压缩视频。");
+    return;
+  }
+
+  if (!navigator.share || !navigator.canShare?.({ files: [compressedVideoFile] })) {
+    els.downloadLink?.click();
+    showError("当前浏览器不支持直接分享压缩视频，已为你触发下载；下载后可在微信或邮件中选择该视频发送。");
+    return;
+  }
+
+  clearError();
+  try {
+    await navigator.share({
+      files: [compressedVideoFile],
+      title: "压缩视频",
+      text: "已压缩的视频",
+    });
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      showError(error.message || "分享失败，请先下载后再转发。");
+    }
+  }
+}
+
 els.tabs.forEach((tab) => {
   tab.addEventListener("click", () => switchTab(tab.dataset.tab));
 });
@@ -1995,6 +2030,7 @@ els.fileInput.addEventListener("change", (event) => setSelectedFile(event.target
 els.clearFile.addEventListener("click", clearFile);
 els.compressBtn.addEventListener("click", compressVideo);
 els.subtitleBtn.addEventListener("click", generateSubtitles);
+els.shareCompressedVideo?.addEventListener("click", shareCompressedVideo);
 els.shareBurnedVideo?.addEventListener("click", shareBurnedVideo);
 els.applySubtitleEdits?.addEventListener("click", applySubtitleEditsFromButton);
 els.reburnSubtitles?.addEventListener("click", reburnEditedSubtitles);

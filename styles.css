@@ -60,6 +60,18 @@ select {
   gap: 16px;
 }
 
+.brand-lockup {
+  min-width: 0;
+}
+
+.brand-logo {
+  display: block;
+  width: min(230px, 58vw);
+  height: auto;
+  margin: 0 0 14px;
+  mix-blend-mode: multiply;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--accent);
@@ -110,6 +122,7 @@ h2 {
 
 .privacy-pill svg,
 button svg,
+.download-button svg,
 .block-heading svg {
   width: 18px;
   height: 18px;
@@ -426,11 +439,14 @@ output {
 }
 
 .icon-button {
-  width: 36px;
+  min-width: 74px;
   height: 36px;
-  flex: 0 0 36px;
+  flex: 0 0 auto;
+  padding: 0 12px;
   background: var(--surface-2);
   color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .progress-panel {
@@ -808,6 +824,10 @@ output {
 
 .update-toast button {
   min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 0 12px;
   border: 0;
   border-radius: 8px;

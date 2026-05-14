@@ -1,7 +1,7 @@
 {
-  "name": "手机视频压缩与字幕翻译",
-  "short_name": "视频字幕",
-  "description": "在手机浏览器压缩视频，并生成翻译字幕。版本 v0.3.14",
+  "name": "视频工具",
+  "short_name": "视频工具",
+  "description": "在手机浏览器压缩视频，并生成翻译字幕。版本 v0.3.15",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

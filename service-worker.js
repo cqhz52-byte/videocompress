@@ -1,4 +1,4 @@
-const CACHE_NAME = "video-compressor-v16";
+const CACHE_NAME = "video-compressor-v17";
 
 const APP_SHELL = [
   "./",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./version.json",
   "./icons/icon.svg",
+  "./icons/curaway-logo.png",
   "https://unpkg.com/lucide@latest/dist/umd/lucide.min.js",
   "./vendor/ffmpeg/index.js",
   "./vendor/ffmpeg/classes.js",
