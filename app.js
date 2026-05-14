@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.20";
+const APP_VERSION = "v0.3.21";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -87,6 +87,7 @@ const els = {
   downloadBurnedVideo: document.querySelector("#downloadBurnedVideo"),
   shareBurnedVideo: document.querySelector("#shareBurnedVideo"),
   errorBox: document.querySelector("#errorBox"),
+  shareApp: document.querySelector("#shareApp"),
   updateToast: document.querySelector("#updateToast"),
   updateText: document.querySelector("#updateText"),
   reloadUpdate: document.querySelector("#reloadUpdate"),
@@ -304,6 +305,16 @@ function sampleToUint8Array(sample) {
 
 function showError(message) {
   els.errorBox.textContent = message;
+  els.errorBox.classList.remove("is-notice");
+  els.errorBox.classList.remove("is-success");
+  els.errorBox.classList.add("is-error");
+  els.errorBox.classList.remove("is-hidden");
+}
+
+function showNotice(message) {
+  els.errorBox.textContent = message;
+  els.errorBox.classList.remove("is-error");
+  els.errorBox.classList.add("is-notice");
   els.errorBox.classList.remove("is-hidden");
 }
 
@@ -345,6 +356,7 @@ function validateTranslateSettings(settings) {
 
 function clearError() {
   els.errorBox.textContent = "";
+  els.errorBox.classList.remove("is-error", "is-notice", "is-success");
   els.errorBox.classList.add("is-hidden");
 }
 
@@ -2072,6 +2084,32 @@ async function shareCompressedVideo() {
   }
 }
 
+async function shareApp() {
+  const shareUrl = window.location.href.split("#")[0];
+  const shareData = {
+    title: "视频工具",
+    text: "手机视频压缩与字幕翻译工具",
+    url: shareUrl,
+  };
+
+  clearError();
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+      return;
+    } catch (error) {
+      if (error.name === "AbortError") return;
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    showNotice("分享链接已复制，可以粘贴到微信、邮件或聊天窗口。");
+  } catch {
+    showNotice(`分享链接：${shareUrl}`);
+  }
+}
+
 els.tabs.forEach((tab) => {
   tab.addEventListener("click", () => switchTab(tab.dataset.tab));
 });
@@ -2081,6 +2119,7 @@ els.fileInput.addEventListener("change", (event) => setSelectedFile(event.target
 els.clearFile.addEventListener("click", clearFile);
 els.compressBtn.addEventListener("click", compressVideo);
 els.subtitleBtn.addEventListener("click", generateSubtitles);
+els.shareApp?.addEventListener("click", shareApp);
 els.subtitleSettingsToggle?.addEventListener("click", openSubtitleSettings);
 els.closeSubtitleSettings?.addEventListener("click", closeSubtitleSettings);
 els.subtitleSettingsSheet?.addEventListener("click", (event) => {
