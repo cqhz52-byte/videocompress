@@ -490,6 +490,58 @@ output {
   animation: status-dots 1.2s steps(4, end) infinite;
 }
 
+.floating-status {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 30;
+  width: min(430px, calc(100% - 28px));
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(21, 32, 46, 0.94);
+  color: #fff;
+  box-shadow: 0 16px 38px rgba(21, 32, 46, 0.3);
+  backdrop-filter: blur(14px);
+}
+
+.floating-spinner {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.floating-spinner svg {
+  width: 22px;
+  height: 22px;
+  animation: spin 0.9s linear infinite;
+}
+
+.floating-status-text {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-progress-text {
+  color: #a7f3d0;
+  font-size: 15px;
+  font-weight: 900;
+}
+
 .result-panel {
   margin-top: 24px;
   padding: 18px;
@@ -657,10 +709,17 @@ output {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .progress-panel.is-working .progress-bar,
   .progress-panel.is-working #statusText::after,
-  .task-step.is-active .task-dot {
+  .task-step.is-active .task-dot,
+  .floating-spinner svg {
     animation: none;
   }
 }
@@ -806,7 +865,7 @@ output {
   position: fixed;
   left: 50%;
   bottom: 18px;
-  z-index: 20;
+  z-index: 40;
   width: min(420px, calc(100% - 28px));
   min-height: 52px;
   display: flex;

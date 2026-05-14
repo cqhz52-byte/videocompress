@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.15";
+const APP_VERSION = "v0.3.16";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -57,6 +57,9 @@ const els = {
   statusText: document.querySelector("#statusText"),
   progressText: document.querySelector("#progressText"),
   progressBar: document.querySelector("#progressBar"),
+  floatingStatus: document.querySelector("#floatingStatus"),
+  floatingStatusText: document.querySelector("#floatingStatusText"),
+  floatingProgressText: document.querySelector("#floatingProgressText"),
   taskSteps: document.querySelector("#taskSteps"),
   resultPanel: document.querySelector("#resultPanel"),
   beforeSize: document.querySelector("#beforeSize"),
@@ -344,10 +347,17 @@ function setProgress(ratio, status) {
   els.progressPanel.classList.remove("is-hidden");
   const safeRatio = Math.max(0, Math.min(1, ratio || 0));
   const percent = Math.round(safeRatio * 100);
+  const isRunning = percent < 100 && status !== "失败";
   els.statusText.textContent = status;
   els.progressText.textContent = `${percent}%`;
   els.progressBar.style.width = `${percent}%`;
-  els.progressPanel.classList.toggle("is-working", percent > 0 && percent < 100);
+  els.progressPanel.classList.toggle("is-working", isRunning);
+  if (els.floatingStatus) {
+    els.floatingStatus.classList.toggle("is-hidden", !isRunning);
+    els.floatingStatus.classList.toggle("is-working", isRunning);
+  }
+  if (els.floatingStatusText) els.floatingStatusText.textContent = status;
+  if (els.floatingProgressText) els.floatingProgressText.textContent = `${percent}%`;
 }
 
 function progressDetail(ratio, status) {
@@ -712,6 +722,7 @@ function clearFile() {
   els.preview.classList.add("is-hidden");
   els.fileSummary.classList.add("is-hidden");
   els.progressPanel.classList.add("is-hidden");
+  els.floatingStatus?.classList.add("is-hidden");
   els.compressBtn.disabled = true;
   els.subtitleBtn.disabled = true;
   clearError();

@@ -19,7 +19,7 @@
             <img class="brand-logo" src="./icons/curaway-logo.png" alt="Curaway" />
             <p class="eyebrow">Mobile Video Studio</p>
             <h1>视频工具</h1>
-            <p class="version-line">版本 v0.3.15</p>
+            <p class="version-line">版本 v0.3.16</p>
           </div>
           <div class="privacy-pill">
             <i data-lucide="shield-check" aria-hidden="true"></i>
@@ -368,6 +368,14 @@
         <p id="errorBox" class="error-box is-hidden" role="alert"></p>
       </section>
     </main>
+
+    <div id="floatingStatus" class="floating-status is-hidden" role="status" aria-live="polite">
+      <span class="floating-spinner" aria-hidden="true">
+        <i data-lucide="loader-circle"></i>
+      </span>
+      <span id="floatingStatusText" class="floating-status-text">准备中</span>
+      <strong id="floatingProgressText" class="floating-progress-text">0%</strong>
+    </div>
 
     <div id="updateToast" class="update-toast is-hidden" role="status">
       <span id="updateText">发现新版本</span>
