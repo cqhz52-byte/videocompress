@@ -1,6 +1,6 @@
 import { FFmpeg } from "./vendor/ffmpeg/index.js";
 
-const APP_VERSION = "v0.3.13";
+const APP_VERSION = "v0.3.14";
 
 const presets = {
   small: { resolution: "720", crf: 33 },
@@ -345,6 +345,7 @@ function setProgress(ratio, status) {
   els.statusText.textContent = status;
   els.progressText.textContent = `${percent}%`;
   els.progressBar.style.width = `${percent}%`;
+  els.progressPanel.classList.toggle("is-working", percent > 0 && percent < 100);
 }
 
 function progressDetail(ratio, status) {
@@ -421,6 +422,7 @@ function ocrTaskSteps() {
   return [
     { id: "awake", label: "保持屏幕常亮" },
     { id: "ocr", label: "识别画面字幕" },
+    { id: "clean", label: "AI 清理重复和干扰文字" },
     { id: "translate", label: "AI 翻译润色" },
     { id: "srt", label: "生成字幕文件" },
   ];
@@ -463,9 +465,12 @@ async function releaseScreenWakeLock() {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && shouldKeepScreenAwake) {
-    requestScreenWakeLock();
+  if (!shouldKeepScreenAwake) return;
+  if (document.visibilityState === "hidden") {
+    updateTaskStep("awake", "warning", "页面进入后台后，手机浏览器可能暂停长任务，请尽快回到前台");
+    return;
   }
+  requestScreenWakeLock();
 });
 
 function withTimeout(promise, ms, message) {
@@ -1260,12 +1265,12 @@ function showAudioExtractionResult(audioFile) {
   els.audioResult.classList.remove("is-hidden");
 }
 
-async function translateSegments(segments) {
+async function translateSegments(segments, options = {}) {
   const settings = collectApiSettings();
   validateTranslateSettings(settings);
 
   if (location.hostname.endsWith("github.io") || location.hostname === "127.0.0.1" || location.hostname === "localhost") {
-    return translateSegmentsInBrowser(segments, settings.deepseekKey);
+    return translateSegmentsInBrowser(segments, settings.deepseekKey, options);
   }
 
   const response = await fetch("./api/translate", {
@@ -1322,38 +1327,116 @@ function parseModelJson(text) {
   }
 }
 
-async function translateSegmentsInBrowser(segments, apiKey) {
+async function requestDeepSeekJson(messages, apiKey, errorLabel) {
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages,
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+    }),
+  }).catch((error) => {
+    throw new Error(`浏览器直连 DeepSeek 失败：${error.message || "可能被 CORS 拦截"}`);
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error?.message || data.message || errorLabel);
+  }
+
+  return parseModelJson(data.choices?.[0]?.message?.content || "{}");
+}
+
+function buildOcrCleanupMessages(segments) {
+  const payload = normalizeSegments(segments).map((item, index) => ({
+    id: item.id || item.index || index + 1,
+    start: Number(item.start.toFixed(2)),
+    end: Number(item.end.toFixed(2)),
+    text: item.text || "",
+  }));
+
+  return [
+    {
+      role: "system",
+      content:
+        "你是视频硬字幕 OCR 清理专家。你需要从手机截帧 OCR 结果中保留真正的字幕，去除干扰文字，并只返回 JSON。",
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        task: "cleanup_ocr_subtitle_segments",
+        outputSchema: { items: [{ id: 1, start: 0, end: 2, text: "clean subtitle text" }] },
+        rules: [
+          "只返回一个 JSON 对象，只有 items 字段",
+          "保留原语言，不要翻译",
+          "去除 logo、水印、用户名、平台按钮、日期时间、固定标题、广告角标、视频内部非字幕文字",
+          "如果同一句字幕因为截帧重复出现，请合并为一条，并延长 start/end 时间",
+          "如果相邻字幕文字几乎相同，只保留自然的一条",
+          "可以轻微修正明显 OCR 错字，但不要凭空补内容",
+          "保持时间顺序，start/end 使用秒数",
+          "没有有效字幕时返回空 items",
+        ],
+        segments: payload,
+      }),
+    },
+  ];
+}
+
+async function cleanupOcrSegmentsWithAI(segments) {
+  const settings = collectApiSettings();
+  validateTranslateSettings(settings);
   const normalized = normalizeSegments(segments);
-  const translated = [];
-  const batchSize = 40;
+  const cleaned = [];
+  const batchSize = 80;
 
   for (let i = 0; i < normalized.length; i += batchSize) {
     const batch = normalized.slice(i, i + batchSize);
-    const ratio = 0.52 + Math.min(0.24, (i / Math.max(1, normalized.length)) * 0.24);
-    setProgress(ratio, "AI 翻译中文字幕");
+    const ratio = 0.78 + Math.min(0.08, (i / Math.max(1, normalized.length)) * 0.08);
+    setProgress(ratio, "AI 清理重复字幕和干扰文字");
+    updateTaskStep("clean", "active", progressDetail(ratio, `第 ${Math.floor(i / batchSize) + 1} 批`));
+    const parsed = await requestDeepSeekJson(buildOcrCleanupMessages(batch), settings.deepseekKey, "DeepSeek 清理硬字幕失败");
+    const items = Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed.segments) ? parsed.segments : [];
+
+    cleaned.push(
+      ...items
+        .map((item, index) => ({
+          id: item.id || `${i + index + 1}`,
+          start: Number(item.start),
+          end: Number(item.end),
+          text: normalizeOcrText(item.text || item.subtitle || ""),
+        }))
+        .filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start && item.text.length > 1),
+    );
+  }
+
+  cleaned.sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged = mergeOcrSegments(cleaned, Number(els.ocrInterval.value) || 1);
+  if (!merged.length) {
+    throw new Error("AI 清理后没有可用字幕。可以调大字幕区域，避开 logo/画面文字后再试。");
+  }
+  return merged;
+}
+
+async function translateSegmentsInBrowser(segments, apiKey, options = {}) {
+  const normalized = normalizeSegments(segments);
+  const translated = [];
+  const batchSize = 40;
+  const progressStart = options.progressStart ?? 0.52;
+  const progressSpan = options.progressSpan ?? 0.24;
+  const statusLabel = options.statusLabel || "AI 翻译中文字幕";
+
+  for (let i = 0; i < normalized.length; i += batchSize) {
+    const batch = normalized.slice(i, i + batchSize);
+    const ratio = progressStart + Math.min(progressSpan, (i / Math.max(1, normalized.length)) * progressSpan);
+    setProgress(ratio, statusLabel);
     updateTaskStep("translate", "active", progressDetail(ratio, `第 ${Math.floor(i / batchSize) + 1} 批`));
-    const response = await fetch("https://api.deepseek.com/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: buildTranslateMessages(batch),
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-    }).catch((error) => {
-      throw new Error(`浏览器直连 DeepSeek 失败：${error.message || "可能被 CORS 拦截"}`);
-    });
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data.error?.message || data.message || "DeepSeek 翻译失败");
-    }
-
-    const parsed = parseModelJson(data.choices?.[0]?.message?.content || "{}");
+    const parsed = await requestDeepSeekJson(buildTranslateMessages(batch), apiKey, "DeepSeek 翻译失败");
     const items = parsed.items || parsed.segments || [];
     const byId = new Map(items.map((item) => [String(item.id), item.translation || item.text || ""]));
     translated.push(
@@ -1838,9 +1921,17 @@ async function generateOcrSubtitles() {
   }
 
   updateTaskStep("ocr", "done", `已识别 ${sourceSegments.length} 条画面字幕，复用 ${reusedFrames} 帧`);
+  setProgress(0.78, "AI 清理硬字幕");
+  updateTaskStep("clean", "active", "去重并过滤 logo、水印、固定画面文字");
+  const cleanedSegments = await cleanupOcrSegmentsWithAI(sourceSegments);
+  updateTaskStep("clean", "done", `保留 ${cleanedSegments.length} 条有效字幕`);
   setProgress(0.86, "翻译画面字幕");
   updateTaskStep("translate", "active", "准备发送文字给 AI");
-  const translated = await translateSegments(sourceSegments);
+  const translated = await translateSegments(cleanedSegments, {
+    progressStart: 0.86,
+    progressSpan: 0.1,
+    statusLabel: "AI 翻译画面字幕",
+  });
   showSubtitleResult(translated);
   updateTaskStep("srt", "done", `已生成 ${normalizeSegments(translated).length} 条字幕`);
   setProgress(1, "字幕完成");
